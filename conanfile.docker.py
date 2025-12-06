@@ -184,6 +184,12 @@ class CuraEngineDockerConan(ConanFile):
         if self.options.enable_plugins:
             self.requires("neargye-semver/0.3.0")
             for req in self.conan_data["requirements_plugins"]:
+                # Skip curaengine_grpc_definitions - it's UltiMaker-specific and not available in ConanCenter
+                # It's only needed for gRPC plugin definitions, which may not be critical for basic plugin support
+                if "curaengine_grpc_definitions" in req:
+                    self.output.warning(f"Skipping {req} - UltiMaker-specific package not available in ConanCenter")
+                    self.output.warning("curaengine_grpc_definitions is only needed for advanced gRPC plugin features")
+                    continue
                 if "@ultimaker" in req:
                     fallback_req = req.split("@")[0]
                     self._require_with_fallback(req, fallback_req)
