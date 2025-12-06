@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.4
 # Multi-stage Dockerfile for CuraEngine
-# Optimized for cloud deployment with BuildKit cache mounts
+# Optimized for cloud deployment (no BuildKit cache mount dependency)
 
 # Dependencies stage - installs dependencies and can be cached separately
 FROM ubuntu:22.04 AS deps
@@ -9,12 +9,15 @@ FROM ubuntu:22.04 AS deps
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Build optimization arguments
-ARG BUILDKIT_INLINE_CACHE=1
 ARG PARALLEL_JOBS=8
 ARG CONAN_CPU_COUNT=8
 
 # Set Conan CPU count for parallel builds
 ENV CONAN_CPU_COUNT=${CONAN_CPU_COUNT}
+
+# Set Conan home to a regular directory (not a cache mount)
+# This ensures packages persist in the image layer for cloud builds
+ENV CONAN_HOME=/root/.conan2
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -86,14 +89,10 @@ RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
     echo "Configured Conan remotes:"; \
     conan remote list || echo "No remotes configured"
 
-# Install dependencies with BuildKit cache mount for Conan cache
-# This layer will be cached and reused when dependencies don't change
-# Cache mount persists Conan packages across builds
-# Create profile within the cache mount to ensure it's available
-# Use --deployer=full_deploy to copy runtime libraries to a persistent directory
-# This is critical for cloud builds where cache mounts may not persist
-RUN --mount=type=cache,target=/root/.conan2 \
-    echo "Creating Conan profile..."; \
+# Install dependencies WITHOUT cache mount (critical for cloud builds)
+# Cloud services often don't support BuildKit cache mounts properly
+# The packages will be stored in /root/.conan2 which persists in the image layer
+RUN echo "Creating Conan profile..."; \
     conan profile detect --force; \
     if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
         echo "UltiMaker remote not available - using only ConanCenter remote"; \
@@ -121,7 +120,11 @@ RUN --mount=type=cache,target=/root/.conan2 \
     -s compiler.libcxx=libstdc++11 \
     -s compiler.cppstd=20 && \
     echo "=== Deployed libraries ===" && \
-    find /build/deploy -name "*.so*" 2>/dev/null | head -20 || echo "No libraries in deploy folder yet"
+    find /build/deploy -name "*.so*" 2>/dev/null | head -20 || echo "Checking deployer output..." && \
+    echo "=== TBB libraries in deploy folder ===" && \
+    find /build/deploy -name "libtbb*.so*" 2>/dev/null || echo "No TBB in deploy folder" && \
+    echo "=== TBB libraries in Conan cache ===" && \
+    find /root/.conan2 -name "libtbb*.so*" 2>/dev/null | head -10 || echo "No TBB in Conan cache"
 
 # Build stage - builds the actual application
 FROM deps AS builder
@@ -136,10 +139,9 @@ COPY stubs ./stubs
 # Build CuraEngine with all features enabled
 # The Docker conanfile handles UltiMaker dependencies gracefully with fallbacks
 # Re-run conan install to ensure all dependencies are available (they should be cached from deps stage)
-# Use --deployer=full_deploy to copy runtime libraries to /build/deploy (persists outside cache mount)
-# Then build the project using conan build
-RUN --mount=type=cache,target=/root/.conan2 \
-    echo "Ensuring Conan profile exists..."; \
+# Use --deployer=full_deploy to copy runtime libraries to /build/deploy
+# NO CACHE MOUNT - this ensures it works on cloud build services
+RUN echo "Ensuring Conan profile exists..."; \
     conan profile detect --force || true; \
     if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
         REMOTE_FLAG="--remote=conancenter"; \
@@ -175,19 +177,29 @@ RUN --mount=type=cache,target=/root/.conan2 \
 RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/CuraEngine \; && \
     test -f /build/CuraEngine || (echo "Error: CuraEngine executable not found after build" && find /build/build -type f -name "*CuraEngine*" && exit 1)
 
-# Collect TBB libraries from the deploy directory (created by --deployer=full_deploy)
-# This does NOT rely on the cache mount - libraries are in /build/deploy/host/*/lib/
+# Collect TBB libraries from multiple locations:
+# 1. Deploy directory (from --deployer=full_deploy)
+# 2. Conan cache directory (now a regular dir, not cache mount)
+# 3. Build output directory
 RUN mkdir -p /build/tbb_libs && \
-    echo "=== Collecting TBB libraries from deploy directory ===" && \
-    echo "Searching in /build/deploy for TBB libraries..." && \
+    echo "=== Collecting TBB libraries ===" && \
+    echo "Step 1: Checking deploy directory..." && \
     find /build/deploy -name "libtbb*.so*" 2>/dev/null && \
-    find /build/deploy -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; && \
-    echo "=== Also checking build output directory ===" && \
+    find /build/deploy -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; || true && \
+    echo "Step 2: Checking Conan cache (/root/.conan2)..." && \
+    find /root/.conan2 -name "libtbb*.so*" 2>/dev/null | head -20 && \
+    find /root/.conan2 -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; || true && \
+    echo "Step 3: Checking build output directory..." && \
     find /build/build -name "libtbb*.so*" 2>/dev/null && \
-    find /build/build -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; && \
-    echo "=== Final TBB libraries ===" && \
+    find /build/build -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; || true && \
+    echo "=== Final TBB libraries collected ===" && \
     ls -lah /build/tbb_libs/ && \
     echo "Total TBB files: $(find /build/tbb_libs -name '*.so*' 2>/dev/null | wc -l)" && \
+    if [ $(find /build/tbb_libs -name '*.so*' 2>/dev/null | wc -l) -eq 0 ]; then \
+        echo "ERROR: No TBB libraries found! Build may fail at runtime."; \
+        echo "Listing all .so files in /build:"; \
+        find /build -name "*.so*" 2>/dev/null | head -50; \
+    fi && \
     touch /build/tbb_libs/.placeholder
 
 # Verify CuraEngine dependencies
@@ -248,13 +260,18 @@ COPY entrypoint.sh /app/entrypoint.sh
 
 # Update dynamic linker cache to register TBB libraries
 RUN ldconfig && \
-    echo "Updated dynamic linker cache"
+    echo "Updated dynamic linker cache" && \
+    echo "Libraries in /usr/local/lib:" && \
+    ls -la /usr/local/lib/ 2>/dev/null || echo "No files in /usr/local/lib"
+
+# Set LD_LIBRARY_PATH as fallback for library loading
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 # Verify all required libraries are found (including TBB)
 RUN echo "Checking required libraries for CuraEngine:" && \
-    ldd /app/CuraEngine || echo "Note: Some libraries may be statically linked" && \
+    ldd /app/CuraEngine && \
     echo "Checking specifically for TBB libraries:" && \
-    (ldd /app/CuraEngine | grep -i tbb || echo "TBB libraries not found in ldd output (may be statically linked)") && \
+    (ldd /app/CuraEngine | grep -i tbb || echo "TBB libraries not found in ldd output") && \
     echo "Library verification complete"
 
 # Make entrypoint executable and set ownership (before switching to non-root user)
