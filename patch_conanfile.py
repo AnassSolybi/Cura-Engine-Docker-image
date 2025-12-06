@@ -33,8 +33,7 @@ def patch_conanfile(filename):
             i += 1
             continue
         
-        # Handle super().config_options() and super().configure() calls
-        # These must be commented out since we removed python_requires_extend
+        # Handle all super() calls - these must be commented out since we removed python_requires_extend
         # Check these early to catch them before other handlers
         if 'super().config_options()' in stripped:
             new_lines.append(' ' * indent + '# super().config_options()  # Disabled (no parent class after removing python_requires_extend)\n')
@@ -43,6 +42,22 @@ def patch_conanfile(filename):
         
         if 'super().configure()' in stripped:
             new_lines.append(' ' * indent + '# super().configure()  # Disabled (no parent class after removing python_requires_extend)\n')
+            i += 1
+            continue
+        
+        if 'super().validate()' in stripped:
+            new_lines.append(' ' * indent + '# super().validate()  # Disabled (no parent class after removing python_requires_extend)\n')
+            i += 1
+            continue
+        
+        if 'super().requirements()' in stripped:
+            new_lines.append(' ' * indent + '# super().requirements()  # Disabled (no parent class after removing python_requires_extend)\n')
+            i += 1
+            continue
+        
+        # Catch-all for any other super() calls (safety net)
+        if stripped.startswith('super().') and stripped.endswith('()'):
+            new_lines.append(' ' * indent + '# ' + stripped + '  # Disabled (no parent class after removing python_requires_extend)\n')
             i += 1
             continue
         
