@@ -66,7 +66,7 @@ RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
 RUN conan profile detect --force
 
 # Copy source code
-COPY CMakeLists.txt Cura.proto CuraEngine.ico CuraEngine.rc ./
+COPY CMakeLists.txt CMakeLists.dependencies.cmake Cura.proto CuraEngine.ico CuraEngine.rc ./
 COPY include ./include
 COPY src ./src
 COPY stubs ./stubs

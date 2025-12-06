@@ -7,6 +7,12 @@ project(CuraEngine)
 find_package(standardprojectsettings REQUIRED)  # imports the cmake module https://github.com/Ultimaker/conan-ultimaker-index/recipes/standardprojectsettings
 AssureOutOfSourceBuilds()
 
+# Option to use bundled dependencies (default: ON for Docker builds)
+option(USE_BUNDLED_DEPS "Use FetchContent to bundle dependencies instead of Conan packages" ON)
+
+# Include dependencies file early to fetch dependencies before find_package calls
+include(CMakeLists.dependencies.cmake)
+
 option(ENABLE_ARCUS "Enable support for ARCUS" ON)
 option(ENABLE_TESTING "Build with unit tests" OFF)
 option(ENABLE_BENCHMARKS "Build with Benchmarks" OFF)
@@ -33,10 +39,7 @@ if (${ENABLE_PLUGINS})
 endif ()
 
 message(STATUS "Building with Arcus: ${ENABLE_ARCUS}")
-if (${ENABLE_ARCUS})
-    find_package(arcus REQUIRED)
-    protobuf_generate_cpp(engine_PB_SRCS engine_PB_HEADERS Cura.proto)
-endif ()
+# Arcus is now handled below in the dependencies section
 
 ### Compiling CuraEngine ###
 # First compile all of CuraEngine as library.
@@ -224,10 +227,27 @@ if (${EXTENSIVE_WARNINGS})
 endif ()
 
 if (ENABLE_ARCUS)
+    # Use bundled Arcus if fetched, otherwise use find_package
+    if(ARCUS_FETCHED)
+        message(STATUS "Using bundled libArcus from FetchContent")
+        # protobuf_generate_cpp will be handled by arcus if it's built as subdirectory
+    else()
+        find_package(arcus REQUIRED)
+    endif()
+    protobuf_generate_cpp(engine_PB_SRCS engine_PB_HEADERS Cura.proto)
     target_link_libraries(_CuraEngine PUBLIC arcus::arcus)
 endif ()
 
-find_package(mapbox-wagyu REQUIRED)
+# Mapbox Wagyu - use bundled version if fetched, otherwise use find_package
+if(MAPBOX_WAGYU_FETCHED)
+    message(STATUS "Using bundled mapbox-wagyu from FetchContent")
+    # Already available via the interface library created in dependencies file
+else()
+    find_package(mapbox-wagyu REQUIRED)
+endif()
+
+# Clipper - for now, still use find_package (Conan)
+# TODO: Bundle clipper if a CMake-enabled version becomes available
 find_package(clipper REQUIRED)
 find_package(RapidJSON REQUIRED)
 find_package(stb REQUIRED)
@@ -264,12 +284,12 @@ target_link_libraries(_CuraEngine
         range-v3::range-v3
         fmt::fmt
         clipper::clipper
-        mapbox-wagyu::mapbox-wagyu
         rapidjson
         stb::stb
         boost::boost
         scripta::scripta
         PNG::PNG
+        $<$<TARGET_EXISTS:mapbox-wagyu::mapbox-wagyu>:mapbox-wagyu::mapbox-wagyu>
         $<$<NOT:$<BOOL:${EMSCRIPTEN}>>:onetbb::onetbb>
         $<$<TARGET_EXISTS:semver::semver>:semver::semver>
         $<$<TARGET_EXISTS:curaengine_grpc_definitions::curaengine_grpc_definitions>:curaengine_grpc_definitions::curaengine_grpc_definitions>

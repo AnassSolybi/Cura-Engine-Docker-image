@@ -168,14 +168,17 @@ class CuraEngineDockerConan(ConanFile):
                 self.requires(req)
         
         # Handle ARCUS requirements
+        # Note: arcus is now bundled via FetchContent in CMakeLists.dependencies.cmake
+        # Skip Conan package for arcus - it will be built from source
         if self.options.enable_arcus:
-            for req in self.conan_data["requirements_arcus"]:
-                # arcus might be from UltiMaker, handle gracefully
-                if "@ultimaker" in req:
-                    fallback_req = req.split("@")[0]
-                    self._require_with_fallback(req, fallback_req, "arcus")
-                else:
-                    self.requires(req)
+            self.output.info("arcus will be built from source via FetchContent (skipping Conan package)")
+            # Skip arcus from conandata.yml - it will be built from source via FetchContent
+            # for req in self.conan_data["requirements_arcus"]:
+            #     if "@ultimaker" in req:
+            #         fallback_req = req.split("@")[0]
+            #         self._require_with_fallback(req, fallback_req, "arcus")
+            #     else:
+            #         self.requires(req)
         
         # Handle plugin requirements
         if self.options.enable_plugins:
@@ -196,7 +199,9 @@ class CuraEngineDockerConan(ConanFile):
                 else:
                     self.requires(req)
         
-        # Hardcoded UltiMaker packages with fallbacks
+        # Hardcoded UltiMaker packages
+        # Note: mapbox-wagyu and arcus are now bundled via FetchContent in CMakeLists.dependencies.cmake
+        # Clipper is still needed from Conan (no CMake-enabled version available yet)
         self._require_with_fallback(
             "clipper/6.4.2@ultimaker/stable",
             "clipper/6.4.2",
@@ -212,12 +217,10 @@ class CuraEngineDockerConan(ConanFile):
         self.requires("range-v3/0.12.0")
         self.requires("zlib/1.3.1")
         
-        # mapbox-wagyu with fallback
-        self._require_with_fallback(
-            "mapbox-wagyu/0.5.0@ultimaker/stable",
-            "mapbox-wagyu/0.5.0",
-            "mapbox-wagyu"
-        )
+        # mapbox-wagyu is now bundled via FetchContent, skip Conan package
+        self.output.info("mapbox-wagyu will be built from source via FetchContent (skipping Conan package)")
+        
+        # Note: arcus is handled above in the ENABLE_ARCUS section if needed
 
     def generate(self):
         deps = CMakeDeps(self)
