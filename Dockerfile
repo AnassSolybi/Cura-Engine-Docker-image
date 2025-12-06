@@ -166,17 +166,46 @@ RUN --mount=type=cache,target=/root/.conan2 \
 RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/CuraEngine \; && \
     test -f /build/CuraEngine || (echo "Error: CuraEngine executable not found after build" && find /build/build -type f -name "*CuraEngine*" && exit 1)
 
+# Collect TBB libraries from Conan build directory for runtime stage
+# OneTBB libraries are needed at runtime and must match the build version
+# First, check what TBB libraries CuraEngine actually needs using ldd
+RUN mkdir -p /build/tbb_libs && \
+    echo "Checking required TBB libraries via ldd..." && \
+    (ldd /build/CuraEngine 2>/dev/null | grep -i tbb | awk '{print $3}' | while read libpath; do \
+        if [ -n "$libpath" ] && [ -f "$libpath" ]; then \
+            echo "Found required library: $libpath"; \
+            cp -v "$libpath" /build/tbb_libs/ 2>/dev/null || true; \
+            # Also copy symlinks and versioned libraries
+            libdir=$(dirname "$libpath"); \
+            libname=$(basename "$libpath"); \
+            find "$libdir" -name "${libname%.so*}*.so*" -type f -o -type l 2>/dev/null | while read linklib; do \
+                cp -vL "$linklib" /build/tbb_libs/ 2>/dev/null || true; \
+            done; \
+        fi; \
+    done || echo "No TBB libraries found via ldd (may be statically linked)") && \
+    echo "Searching for TBB libraries in Conan directories..." && \
+    (find /root/.conan2/data/onetbb -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null | while read lib; do \
+        echo "Found: $lib"; \
+        cp -vL "$lib" /build/tbb_libs/ 2>/dev/null || true; \
+    done || true) && \
+    (find /build/build -path "*/package/*/lib/libtbb*.so*" \( -type f -o -type l \) 2>/dev/null | while read lib; do \
+        echo "Found: $lib"; \
+        cp -vL "$lib" /build/tbb_libs/ 2>/dev/null || true; \
+    done || true) && \
+    echo "Collected TBB libraries:" && \
+    (ls -lh /build/tbb_libs/*.so* 2>/dev/null || echo "Warning: No TBB libraries found (may be statically linked)") && \
+    touch /build/tbb_libs/.placeholder
+
 # Runtime stage
 FROM ubuntu:22.04 AS runtime
 
 # Install runtime dependencies and Node.js
+# Note: We don't install libtbb2/libtbbmalloc2 from Ubuntu as we use Conan-built versions
 RUN apt-get update && apt-get install -y \
     libstdc++6 \
     libgcc-s1 \
     ca-certificates \
     curl \
-    libtbb2 \
-    libtbbmalloc2 \
     libprotobuf23 \
     && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs \
@@ -190,6 +219,22 @@ RUN useradd -m -u 1000 curaengine && \
 # Copy CuraEngine executable from builder (from known location)
 COPY --from=builder /build/CuraEngine /app/CuraEngine
 
+# Copy TBB libraries from builder stage and install them
+# These are the Conan-built libraries that match the build version
+COPY --from=builder /build/tbb_libs /tmp/tbb_libs
+
+# Install TBB libraries to /usr/local/lib
+RUN mkdir -p /usr/local/lib && \
+    if [ -d /tmp/tbb_libs ] && [ "$(ls -A /tmp/tbb_libs 2>/dev/null)" ]; then \
+        echo "Installing TBB libraries from builder stage..."; \
+        cp -v /tmp/tbb_libs/*.so* /usr/local/lib/ 2>/dev/null || true; \
+        echo "TBB libraries installed:"; \
+        ls -lh /usr/local/lib/libtbb*.so* 2>/dev/null || echo "No TBB libraries found"; \
+        rm -rf /tmp/tbb_libs; \
+    else \
+        echo "Warning: No TBB libraries found in builder stage (may be statically linked)"; \
+    fi
+
 # Copy API server files
 COPY server/ /app/server/
 
@@ -201,9 +246,16 @@ RUN npm install --production && \
 # Copy entrypoint script
 COPY entrypoint.sh /app/entrypoint.sh
 
-# Copy required runtime libraries if any
-# (Most dependencies should be statically linked, but we copy just in case)
-RUN ldd /app/CuraEngine || true
+# Update dynamic linker cache to register TBB libraries
+RUN ldconfig && \
+    echo "Updated dynamic linker cache"
+
+# Verify all required libraries are found (including TBB)
+RUN echo "Checking required libraries for CuraEngine:" && \
+    ldd /app/CuraEngine || echo "Note: Some libraries may be statically linked" && \
+    echo "Checking specifically for TBB libraries:" && \
+    (ldd /app/CuraEngine | grep -i tbb || echo "TBB libraries not found in ldd output (may be statically linked)") && \
+    echo "Library verification complete"
 
 # Make entrypoint executable and set ownership (before switching to non-root user)
 RUN chmod +x /app/entrypoint.sh && \

@@ -46,7 +46,7 @@ The API server runs on port **3000** by default. The base URL depends on your de
 
 - **Local Development**: `http://localhost:3000`
 - **Docker Container**: `http://localhost:3000` (when port is mapped)
-- **Production**: `https://your-domain.com` (configure as needed)
+- **Production**: `https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems`
 
 ### Versioning
 
@@ -91,7 +91,7 @@ Returns API information and available endpoints.
 
 ```http
 GET / HTTP/1.1
-Host: localhost:3000
+Host: curaengine-27ce6a0e2bd1.hosted.ghaymah.systems
 ```
 
 #### Response
@@ -117,6 +117,10 @@ Host: localhost:3000
 #### Example
 
 ```bash
+# Production
+curl https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/
+
+# Local Development
 curl http://localhost:3000/
 ```
 
@@ -130,7 +134,7 @@ Simple health check endpoint for monitoring and load balancers.
 
 ```http
 GET /health HTTP/1.1
-Host: localhost:3000
+Host: curaengine-27ce6a0e2bd1.hosted.ghaymah.systems
 ```
 
 #### Response
@@ -150,6 +154,10 @@ Host: localhost:3000
 #### Example
 
 ```bash
+# Production
+curl https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/health
+
+# Local Development
 curl http://localhost:3000/health
 ```
 
@@ -236,6 +244,13 @@ For a complete list of available settings, refer to CuraEngine's settings docume
 **Basic Slice Request:**
 
 ```bash
+# Production
+curl -X POST \
+  -F "uploaded_file=@model.stl" \
+  https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice \
+  --output output.gcode
+
+# Local Development
 curl -X POST \
   -F "uploaded_file=@model.stl" \
   http://localhost:3000/slice \
@@ -245,6 +260,14 @@ curl -X POST \
 **With Custom Settings:**
 
 ```bash
+# Production
+curl -X POST \
+  -F "uploaded_file=@model.stl" \
+  -F 'settings={"layer_height":0.2,"infill_sparse_density":20,"wall_line_count":3}' \
+  https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice \
+  --output output.gcode
+
+# Local Development
 curl -X POST \
   -F "uploaded_file=@model.stl" \
   -F 'settings={"layer_height":0.2,"infill_sparse_density":20,"wall_line_count":3}' \
@@ -255,6 +278,15 @@ curl -X POST \
 **With Printer Definition:**
 
 ```bash
+# Production
+curl -X POST \
+  -F "uploaded_file=@model.stl" \
+  -F "printer_def=/printer-settings/ultimaker3.def.json" \
+  -F 'settings={"layer_height":0.15}' \
+  https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice \
+  --output output.gcode
+
+# Local Development
 curl -X POST \
   -F "uploaded_file=@model.stl" \
   -F "printer_def=/printer-settings/ultimaker3.def.json" \
@@ -272,6 +304,13 @@ curl -X POST \
 #### Basic Slice Request
 
 ```bash
+# Production
+curl -X POST \
+  -F "uploaded_file=@/path/to/model.stl" \
+  https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice \
+  --output /path/to/output.gcode
+
+# Local Development
 curl -X POST \
   -F "uploaded_file=@/path/to/model.stl" \
   http://localhost:3000/slice \
@@ -281,6 +320,14 @@ curl -X POST \
 #### Slice with Custom Settings
 
 ```bash
+# Production
+curl -X POST \
+  -F "uploaded_file=@model.stl" \
+  -F 'settings={"layer_height":0.2,"infill_sparse_density":30,"support_enable":true}' \
+  https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice \
+  --output output.gcode
+
+# Local Development
 curl -X POST \
   -F "uploaded_file=@model.stl" \
   -F 'settings={"layer_height":0.2,"infill_sparse_density":30,"support_enable":true}' \
@@ -291,6 +338,14 @@ curl -X POST \
 #### Slice with Printer Definition
 
 ```bash
+# Production
+curl -X POST \
+  -F "uploaded_file=@model.stl" \
+  -F "printer_def=/printer-settings/ultimaker3.def.json" \
+  https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice \
+  --output output.gcode
+
+# Local Development
 curl -X POST \
   -F "uploaded_file=@model.stl" \
   -F "printer_def=/printer-settings/ultimaker3.def.json" \
@@ -301,6 +356,10 @@ curl -X POST \
 #### Check API Health
 
 ```bash
+# Production
+curl https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/health
+
+# Local Development
 curl http://localhost:3000/health
 ```
 
@@ -312,7 +371,11 @@ curl http://localhost:3000/health
 const formData = new FormData();
 formData.append('uploaded_file', fileInput.files[0]);
 
-fetch('http://localhost:3000/slice', {
+// Production URL
+const API_URL = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice';
+// Local Development: const API_URL = 'http://localhost:3000/slice';
+
+fetch(API_URL, {
   method: 'POST',
   body: formData
 })
@@ -347,7 +410,11 @@ const settings = {
 };
 formData.append('settings', JSON.stringify(settings));
 
-fetch('http://localhost:3000/slice', {
+// Production URL
+const API_URL = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice';
+// Local Development: const API_URL = 'http://localhost:3000/slice';
+
+fetch(API_URL, {
   method: 'POST',
   body: formData
 })
@@ -377,7 +444,11 @@ async function sliceModel(file, settings = {}) {
   }
 
   try {
-    const response = await fetch('http://localhost:3000/slice', {
+    // Production URL
+    const API_URL = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice';
+    // Local Development: const API_URL = 'http://localhost:3000/slice';
+    
+    const response = await fetch(API_URL, {
       method: 'POST',
       body: formData
     });
@@ -420,7 +491,9 @@ sliceModel(fileInput.files[0], {
 ```python
 import requests
 
-url = 'http://localhost:3000/slice'
+# Production URL
+url = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice'
+# Local Development: url = 'http://localhost:3000/slice'
 
 with open('model.stl', 'rb') as f:
     files = {'uploaded_file': f}
@@ -441,7 +514,9 @@ else:
 import requests
 import json
 
-url = 'http://localhost:3000/slice'
+# Production URL
+url = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice'
+# Local Development: url = 'http://localhost:3000/slice'
 
 settings = {
     'layer_height': 0.2,
@@ -474,7 +549,9 @@ import json
 import sys
 
 def slice_model(file_path, settings=None, printer_def=None):
-    url = 'http://localhost:3000/slice'
+    # Production URL
+    url = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice'
+    # Local Development: url = 'http://localhost:3000/slice'
     
     files = {'uploaded_file': open(file_path, 'rb')}
     data = {}
@@ -538,7 +615,11 @@ app.post('/proxy-slice', upload.single('model'), async (req, res) => {
       formData.append('settings', req.body.settings);
     }
 
-    const response = await axios.post('http://localhost:3000/slice', formData, {
+    // Production URL
+    const API_URL = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice';
+    // Local Development: const API_URL = 'http://localhost:3000/slice';
+    
+    const response = await axios.post(API_URL, formData, {
       headers: formData.getHeaders(),
       responseType: 'stream'
     });
@@ -749,7 +830,11 @@ async function sliceModel(file) {
   formData.append('uploaded_file', file);
 
   try {
-    const response = await fetch('http://localhost:3000/slice', {
+    // Production URL
+    const API_URL = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice';
+    // Local Development: const API_URL = 'http://localhost:3000/slice';
+    
+    const response = await fetch(API_URL, {
       method: 'POST',
       body: formData
     });
@@ -844,12 +929,23 @@ async function sliceModel(file) {
 2. **Test the API**
 
    ```bash
+   # Production
+   curl https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/health
+   
+   # Local Development
    curl http://localhost:3000/health
    ```
 
 3. **Slice Your First Model**
 
    ```bash
+   # Production
+   curl -X POST \
+     -F "uploaded_file=@model.stl" \
+     https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice \
+     --output output.gcode
+   
+   # Local Development
    curl -X POST \
      -F "uploaded_file=@model.stl" \
      http://localhost:3000/slice \
@@ -943,7 +1039,11 @@ function sliceModelWithProgress(file, settings, onProgress) {
       reject(new Error('Network error'));
     });
     
-    xhr.open('POST', 'http://localhost:3000/slice');
+    // Production URL
+    const API_URL = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice';
+    // Local Development: const API_URL = 'http://localhost:3000/slice';
+    
+    xhr.open('POST', API_URL);
     xhr.responseType = 'blob';
     xhr.send(formData);
   });
@@ -987,7 +1087,11 @@ async function sliceModelWithTimeout(file, settings, timeout = 300000) {
       formData.append('settings', JSON.stringify(settings));
     }
     
-    const response = await fetch('http://localhost:3000/slice', {
+    // Production URL
+    const API_URL = 'https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/slice';
+    // Local Development: const API_URL = 'http://localhost:3000/slice';
+    
+    const response = await fetch(API_URL, {
       method: 'POST',
       body: formData,
       signal: controller.signal
@@ -1068,8 +1172,12 @@ Monitor the API for:
 
 ```bash
 #!/bin/bash
+# Production URL
+API_URL="https://curaengine-27ce6a0e2bd1.hosted.ghaymah.systems/health"
+# Local Development: API_URL="http://localhost:3000/health"
+
 while true; do
-  response=$(curl -s http://localhost:3000/health)
+  response=$(curl -s $API_URL)
   if [ "$response" != '{"status":"healthy"}' ]; then
     echo "API health check failed: $response"
     # Send alert
