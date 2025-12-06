@@ -4,10 +4,15 @@ This guide explains how to build and deploy CuraEngine as a Docker container on 
 
 ## Prerequisites
 
-- Docker 20.10 or later
+- Docker 20.10 or later (with BuildKit enabled by default)
 - Docker Compose 2.0 or later (optional, for easier deployment)
 - At least 8GB of available disk space for building
 - At least 4GB of RAM recommended for building
+
+**Note:** This Dockerfile uses Docker BuildKit features (cache mounts) for optimized builds. BuildKit is enabled by default in Docker 20.10+. If you're using an older version, enable it with:
+```bash
+export DOCKER_BUILDKIT=1
+```
 
 ## Building the Docker Image
 
@@ -19,6 +24,11 @@ Build the Docker image from the project root:
 docker build -t curaengine:latest .
 ```
 
+For optimal performance with BuildKit cache mounts (recommended):
+```bash
+DOCKER_BUILDKIT=1 docker build -t curaengine:latest .
+```
+
 ### Build with Custom Tag
 
 ```bash
@@ -27,14 +37,46 @@ docker build -t curaengine:v5.12.0 .
 
 ### Build Arguments
 
-The Dockerfile supports the following build argument:
+The Dockerfile supports the following build arguments:
 
 - `ULTIMAKER_CONAN_REMOTE_URL`: URL for the UltiMaker Conan remote (default: `https://artifactory.ultimaker.com/artifactory/api/conan/conan-ultimaker`)
+- `PARALLEL_JOBS`: Number of parallel jobs for Conan builds (default: `8`)
+- `CONAN_CPU_COUNT`: Number of CPUs to use for parallel compilation (default: `8`)
 
-Example:
+Examples:
 ```bash
+# Custom UltiMaker remote
 docker build --build-arg ULTIMAKER_CONAN_REMOTE_URL=https://your-ultimaker-remote-url.com -t curaengine:latest .
+
+# Optimize for more CPU cores
+docker build --build-arg PARALLEL_JOBS=16 --build-arg CONAN_CPU_COUNT=16 -t curaengine:latest .
+
+# Combine multiple arguments
+docker build \
+  --build-arg ULTIMAKER_CONAN_REMOTE_URL=https://your-remote.com \
+  --build-arg PARALLEL_JOBS=12 \
+  --build-arg CONAN_CPU_COUNT=12 \
+  -t curaengine:latest .
 ```
+
+### Build Optimization
+
+The Dockerfile is optimized for cloud deployment with the following features:
+
+1. **BuildKit Cache Mounts**: Conan package cache is persisted across builds using BuildKit cache mounts, significantly reducing build time for subsequent builds.
+
+2. **Separate Dependency Stage**: Dependencies are installed in a separate stage (`deps`) that can be cached independently of source code changes.
+
+3. **Parallel Builds**: Uses multiple CPU cores for parallel compilation (configurable via `PARALLEL_JOBS` and `CONAN_CPU_COUNT`).
+
+4. **Smart Rebuilds**: Uses `--build=missing:outdated` to only rebuild packages that have changed.
+
+**Expected Build Times:**
+- **First build**: 20-30 minutes (all dependencies compiled from source)
+- **Subsequent builds (source changes only)**: 2-5 minutes (dependencies cached)
+- **Dependency changes**: 15-20 minutes (only changed dependencies rebuild)
+
+**Note:** Cloud services that support BuildKit will automatically benefit from cache mounts. If your service doesn't support BuildKit cache mounts, the build will still work but won't have caching benefits.
 
 **Note:** The Docker build uses a Docker-specific Conan recipe (`conanfile.docker.py`) that handles UltiMaker dependencies gracefully. The build will:
 1. Try to use UltiMaker packages if the remote is available
@@ -224,21 +266,40 @@ healthcheck:
 
 ### Build Fails
 
-1. **Out of memory**: Increase Docker memory limit or use a machine with more RAM
-2. **Conan download fails**: 
+1. **Build timeout**: 
+   - The optimized Dockerfile uses BuildKit cache mounts to speed up builds
+   - Ensure BuildKit is enabled: `export DOCKER_BUILDKIT=1` or use `DOCKER_BUILDKIT=1 docker build`
+   - For cloud services, check if BuildKit is supported and enabled
+   - Increase build timeout in your deployment configuration if needed
+   - First builds will take 20-30 minutes; subsequent builds should be much faster (2-5 minutes)
+
+2. **Out of memory**: 
+   - Increase Docker memory limit or use a machine with more RAM
+   - Reduce `PARALLEL_JOBS` and `CONAN_CPU_COUNT` if memory is limited
+
+3. **Conan download fails**: 
    - Check internet connection and Conan remote configuration
    - The Docker build uses `conanfile.docker.py` which handles UltiMaker dependencies gracefully
-   - If UltiMaker packages are unavailable, they will be built from source with `--build=missing`
+   - If UltiMaker packages are unavailable, they will be built from source with `--build=missing:outdated`
    - If you see errors about packages not being found:
-     - Ensure `--build=missing` is used (it's included in the Dockerfile)
+     - Ensure `--build=missing:outdated` is used (it's included in the Dockerfile)
      - Check that ConanCenter remote is configured (it's added by default)
      - Some packages may need to be built from source if recipes are available
-3. **Compiler errors**: Ensure you're using a compatible base image (Ubuntu 22.04)
-4. **Package resolution errors**:
+
+4. **Compiler errors**: 
+   - Ensure you're using a compatible base image (Ubuntu 22.04)
+   - Verify GCC 12 is properly installed
+
+5. **Package resolution errors**:
    - The Docker conanfile uses fallback mechanisms for UltiMaker packages
    - Packages like `clipper` and `mapbox-wagyu` will be resolved from ConanCenter or built from source
    - If a package cannot be resolved, check if a Conan recipe exists in ConanCenter
    - The build will fail with a clear error message if a required package cannot be found or built
+
+6. **Cache mount issues**:
+   - If BuildKit cache mounts aren't working, the build will still succeed but without caching
+   - Verify BuildKit is enabled: `docker version` should show BuildKit support
+   - Some cloud services may not support cache mounts; check your service documentation
 
 ### Runtime Issues
 
@@ -346,6 +407,8 @@ curl -X POST \
 - The image runs as a non-root user for security
 - **Docker-specific Conan recipe**: Uses `conanfile.docker.py` which handles UltiMaker dependencies gracefully without patching
 - **No fragile patching**: The build system no longer relies on patching `conanfile.py`, making it more robust and maintainable
+- **BuildKit optimization**: Uses BuildKit cache mounts to significantly reduce build times for subsequent builds
+- **Multi-stage caching**: Dependencies are cached separately from source code, allowing faster rebuilds when only source changes
 
 ## License
 

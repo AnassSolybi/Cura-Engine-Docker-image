@@ -1,9 +1,20 @@
+# syntax=docker/dockerfile:1.4
 # Multi-stage Dockerfile for CuraEngine
-# Build stage
-FROM ubuntu:22.04 AS builder
+# Optimized for cloud deployment with BuildKit cache mounts
+
+# Dependencies stage - installs dependencies and can be cached separately
+FROM ubuntu:22.04 AS deps
 
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
+
+# Build optimization arguments
+ARG BUILDKIT_INLINE_CACHE=1
+ARG PARALLEL_JOBS=8
+ARG CONAN_CPU_COUNT=8
+
+# Set Conan CPU count for parallel builds
+ENV CONAN_CPU_COUNT=${CONAN_CPU_COUNT}
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -13,6 +24,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     pkg-config \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Conan 2.7.0+
@@ -65,17 +77,11 @@ RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
 # Create Conan profile with GCC 12
 RUN conan profile detect --force
 
-# Copy source code
-COPY CMakeLists.txt CMakeLists.dependencies.cmake Cura.proto CuraEngine.ico CuraEngine.rc ./
-COPY include ./include
-COPY src ./src
-COPY stubs ./stubs
-# Note: benchmark, stress_benchmark, and tests are excluded as they're not needed for production build
-
-# Build CuraEngine with all features enabled
-# The Docker conanfile handles UltiMaker dependencies gracefully with fallbacks
-# Use only ConanCenter remote if UltiMaker remote was removed (to avoid connection errors)
-RUN if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
+# Install dependencies with BuildKit cache mount for Conan cache
+# This layer will be cached and reused when dependencies don't change
+# Cache mount persists Conan packages across builds
+RUN --mount=type=cache,target=/root/.conan2 \
+    if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
         echo "UltiMaker remote not available - using only ConanCenter remote"; \
         REMOTE_FLAG="--remote=conancenter"; \
     else \
@@ -83,9 +89,11 @@ RUN if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
         REMOTE_FLAG=""; \
     fi; \
     echo "Installing dependencies (Docker conanfile will handle UltiMaker packages with fallbacks)..."; \
-    conan install . --output-folder=build --build=missing $REMOTE_FLAG \
+    echo "Using ${CONAN_CPU_COUNT} parallel jobs for builds"; \
+    conan install . --output-folder=build --build=missing:outdated $REMOTE_FLAG \
     -c tools.system.package_manager:mode=install \
     -c tools.system.package_manager:sudo=True \
+    -c tools.build:jobs=${PARALLEL_JOBS} \
     -o enable_arcus=True \
     -o enable_plugins=True \
     -o enable_remote_plugins=True \
@@ -97,8 +105,21 @@ RUN if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
     -s compiler.libcxx=libstdc++11 \
     -s compiler.cppstd=20
 
-# Then build the project using Conan
-RUN conan build . --output-folder=build
+# Build stage - builds the actual application
+FROM deps AS builder
+
+# Copy source code (this layer invalidates when source changes)
+COPY CMakeLists.txt CMakeLists.dependencies.cmake Cura.proto CuraEngine.ico CuraEngine.rc ./
+COPY include ./include
+COPY src ./src
+COPY stubs ./stubs
+# Note: benchmark, stress_benchmark, and tests are excluded as they're not needed for production build
+
+# Build CuraEngine with all features enabled
+# The Docker conanfile handles UltiMaker dependencies gracefully with fallbacks
+# Use cache mount for Conan cache to speed up subsequent builds
+RUN --mount=type=cache,target=/root/.conan2 \
+    conan build . --output-folder=build
 
 # Find and copy the executable to a known location for the runtime stage
 RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/CuraEngine \; && \

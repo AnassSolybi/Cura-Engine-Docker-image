@@ -39,6 +39,10 @@ permissions:
 jobs:
   testing:
     name: Run unit tests
+    # Note: The reusable workflow may show a warning about missing unit_tests_results.xml
+    # This is non-critical - tests still run, but results aren't uploaded as artifacts
+    # The warning occurs because CTest needs to be run with --output-junit flag
+    # to generate JUnit XML, which is controlled by the reusable workflow
     uses: ultimaker/cura-workflows/.github/workflows/unit-test.yml@main
     with:
       test_use_ctest: true
