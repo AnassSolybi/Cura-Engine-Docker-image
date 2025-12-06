@@ -44,10 +44,12 @@ on:
 
 jobs:
   conan-package:
-    # Skip for pull requests from forks (they don't have access to Conan remote secrets)
+    # Skip package uploads if this is not the main UltiMaker repository
     # The reusable workflow requires Conan remote authentication secrets
-    # Configure these in repository settings if you want to enable package uploads
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    # which are typically only available in the main UltiMaker/CuraEngine repository
+    # To enable package uploads, configure CONAN_LOGIN_USERNAME and CONAN_PASSWORD secrets
+    # in your repository settings
+    if: ${{ github.repository == 'Ultimaker/CuraEngine' }}
     uses: ultimaker/cura-workflows/.github/workflows/conan-package.yml@main
     with:
       platform_wasm: true
