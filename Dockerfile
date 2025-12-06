@@ -59,6 +59,15 @@ RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
         (conan remote list 2>/dev/null | grep -q "ultimaker" && echo "UltiMaker remote already exists") || \
         echo "Note: Could not add UltiMaker remote (may require authentication)"; \
     fi; \
+    echo "Testing UltiMaker remote connectivity..."; \
+    if conan remote list 2>/dev/null | grep -q "ultimaker"; then \
+        if ! timeout 5 curl -s --max-time 5 "$ULTIMAKER_CONAN_REMOTE_URL/v1/ping" > /dev/null 2>&1; then \
+            echo "WARNING: UltiMaker remote is unreachable, disabling it"; \
+            conan remote disable ultimaker 2>/dev/null || true; \
+        else \
+            echo "UltiMaker remote is reachable"; \
+        fi; \
+    fi; \
     echo "Configured Conan remotes:"; \
     conan remote list || echo "No remotes configured"
 
@@ -73,7 +82,13 @@ COPY src ./src
 
 # Build CuraEngine with all features enabled
 # First, install dependencies
-RUN conan install . --output-folder=build --build=missing \
+# If UltiMaker remote is disabled, we'll skip UltiMaker packages (patched in conanfile.py)
+RUN ULTIMAKER_DISABLED=$(conan remote list 2>/dev/null | grep -q "ultimaker.*disabled" && echo "true" || echo "false") && \
+    if [ "$ULTIMAKER_DISABLED" = "true" ]; then \
+        echo "WARNING: UltiMaker remote is disabled. UltiMaker packages will be skipped (patched in conanfile.py)."; \
+        echo "Build may fail if these packages are required and cannot be built from source."; \
+    fi && \
+    conan install . --output-folder=build --build=missing \
     -c tools.system.package_manager:mode=install \
     -c tools.system.package_manager:sudo=True \
     -o enable_arcus=True \
@@ -85,7 +100,10 @@ RUN conan install . --output-folder=build --build=missing \
     -s compiler=gcc \
     -s compiler.version=12 \
     -s compiler.libcxx=libstdc++11 \
-    -s compiler.cppstd=20
+    -s compiler.cppstd=20 || \
+    (echo "ERROR: conan install failed. This may be due to unreachable UltiMaker packages." && \
+     echo "Consider providing ULTIMAKER_CONAN_REMOTE_URL with authentication or disabling features that require UltiMaker packages." && \
+     exit 1)
 
 # Then build the project using Conan
 RUN conan build . --output-folder=build

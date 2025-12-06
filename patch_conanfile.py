@@ -110,6 +110,59 @@ def patch_conanfile(filename):
             i += 1
             continue
         
+        # Handle UltiMaker package dependencies in requirements() method
+        # Remove @ultimaker reference to try ConanCenter or build from source
+        if 'for req in self.conan_data["requirements"]:' in line:
+            new_lines.append(line)
+            i += 1
+            # Add logic to remove @ultimaker reference before the onetbb check
+            if i < len(lines):
+                next_line = lines[i] if i < len(lines) else ''
+                # Insert logic to remove @ultimaker reference
+                new_lines.append(' ' * indent + '            # Remove @ultimaker reference (remote unreachable, try ConanCenter or build from source)\n')
+                new_lines.append(' ' * indent + '            if "@ultimaker" in req:\n')
+                new_lines.append(' ' * indent + '                req = req.split("@")[0]  # Remove @ultimaker reference\n')
+                new_lines.append(' ' * indent + '                print(f"Trying package without UltiMaker reference: {req}")\n')
+                # Now add the next line (onetbb check)
+                new_lines.append(next_line)
+                i += 1
+                continue
+        
+        # Handle UltiMaker packages in other loops (arcus, scripta from conandata.yml)
+        if 'for req in self.conan_data["requirements_arcus"]:' in line or \
+           'for req in self.conan_data["requirements_plugins"]:' in line or \
+           'for req in self.conan_data["requirements_cura_resources"]:' in line:
+            new_lines.append(line)
+            i += 1
+            # Add logic to remove @ultimaker reference
+            if i < len(lines):
+                next_line = lines[i] if i < len(lines) else ''
+                new_lines.append(' ' * indent + '            # Remove @ultimaker reference (remote unreachable, try ConanCenter or build from source)\n')
+                new_lines.append(' ' * indent + '            if "@ultimaker" in req:\n')
+                new_lines.append(' ' * indent + '                req = req.split("@")[0]  # Remove @ultimaker reference\n')
+                new_lines.append(' ' * indent + '                print(f"Trying package without UltiMaker reference: {req}")\n')
+                new_lines.append(next_line)
+                i += 1
+                continue
+        
+        # Handle hardcoded UltiMaker package dependencies
+        # clipper/6.4.2@ultimaker/stable -> remove @ultimaker reference
+        if '@ultimaker/stable' in line and 'clipper' in line and 'self.requires' in line:
+            # Extract version and try without @ultimaker
+            new_lines.append(' ' * indent + '# ' + line.lstrip() + '  # UltiMaker remote unreachable\n')
+            new_lines.append(' ' * indent + '    # Try without @ultimaker reference (ConanCenter or build from source):\n')
+            new_lines.append(' ' * indent + '    self.requires("clipper/6.4.2")  # Removed @ultimaker/stable\n')
+            i += 1
+            continue
+        
+        # mapbox-wagyu/0.5.0@ultimaker/stable -> remove @ultimaker reference
+        if '@ultimaker/stable' in line and 'mapbox-wagyu' in line and 'self.requires' in line:
+            new_lines.append(' ' * indent + '# ' + line.lstrip() + '  # UltiMaker remote unreachable\n')
+            new_lines.append(' ' * indent + '    # Try without @ultimaker reference (ConanCenter or build from source):\n')
+            new_lines.append(' ' * indent + '    self.requires("mapbox-wagyu/0.5.0")  # Removed @ultimaker/stable\n')
+            i += 1
+            continue
+        
         # Default: keep the line as-is
         new_lines.append(line)
         i += 1
