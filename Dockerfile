@@ -117,15 +117,31 @@ COPY stubs ./stubs
 
 # Build CuraEngine with all features enabled
 # The Docker conanfile handles UltiMaker dependencies gracefully with fallbacks
-# Use cache mount for Conan cache to speed up subsequent builds
-# Use --build=missing to ensure any missing dependencies are built from source
+# Re-run conan install to ensure all dependencies are available (they should be cached from deps stage)
+# Then build the project using conan build
 RUN --mount=type=cache,target=/root/.conan2 \
     if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
         REMOTE_FLAG="--remote=conancenter"; \
     else \
         REMOTE_FLAG=""; \
     fi; \
-    conan build . --output-folder=build --build=missing --build=missing $REMOTE_FLAG
+    echo "Re-installing dependencies to ensure they're available for build..."; \
+    conan install . --output-folder=build --build=missing $REMOTE_FLAG \
+    -c tools.system.package_manager:mode=install \
+    -c tools.system.package_manager:sudo=True \
+    -c tools.build:jobs=${PARALLEL_JOBS} \
+    -o enable_arcus=True \
+    -o enable_plugins=True \
+    -o enable_remote_plugins=True \
+    -o enable_benchmarks=False \
+    -o enable_extensive_warnings=False \
+    -s build_type=Release \
+    -s compiler=gcc \
+    -s compiler.version=12 \
+    -s compiler.libcxx=libstdc++11 \
+    -s compiler.cppstd=20 && \
+    echo "Building CuraEngine..."; \
+    conan build . --output-folder=build
 
 # Find and copy the executable to a known location for the runtime stage
 RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/CuraEngine \; && \
