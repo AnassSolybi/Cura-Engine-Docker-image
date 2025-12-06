@@ -69,25 +69,18 @@ if(USE_BUNDLED_DEPS)
                 )
                 # Replace find_package(Protobuf ...) with version that uses FindProtobuf module
                 # System protobuf from apt might not have CMake config files, so use FindProtobuf module
-                # Handle both find_package(Protobuf ...) and find_package(protobuf ...)
+                # Use a placeholder approach: first replace with placeholder, then replace placeholder with full implementation
+                # This ensures we catch all variations of find_package(Protobuf ...) and find_package(protobuf ...)
                 string(REGEX REPLACE 
-                    "find_package\\(Protobuf[^)]*\\)"
-                    "find_package(Protobuf REQUIRED MODULE)"
+                    "find_package\\([Pp]rotobuf[^)]*\\)"
+                    "@PROTOBUF_FIND_PACKAGE_PLACEHOLDER@"
                     ARCUS_CMAKE_CONTENT
                     "${ARCUS_CMAKE_CONTENT}"
                 )
-                # Also handle lowercase protobuf
-                string(REGEX REPLACE 
-                    "find_package\\(protobuf[^)]*REQUIRED[^)]*\\)"
-                    "find_package(Protobuf REQUIRED MODULE)"
-                    ARCUS_CMAKE_CONTENT
-                    "${ARCUS_CMAKE_CONTENT}"
-                )
-                # After FindProtobuf, ensure include directories are set correctly for compiler headers
-                # Insert code after find_package(Protobuf) to verify and fix include paths
-                string(REGEX REPLACE 
-                    "(find_package\\(Protobuf REQUIRED MODULE\\))"
-                    "\\1\n    # Ensure /usr/include is in Protobuf_INCLUDE_DIRS for compiler headers\n    # On Ubuntu/Debian, libprotobuf-dev installs headers to /usr/include/google/protobuf/\n    if(Protobuf_INCLUDE_DIRS)\n        list(FIND Protobuf_INCLUDE_DIRS \"/usr/include\" PROTOBUF_HAS_USR_INCLUDE)\n        if(PROTOBUF_HAS_USR_INCLUDE EQUAL -1)\n            list(APPEND Protobuf_INCLUDE_DIRS \"/usr/include\")\n            message(STATUS \"Added /usr/include to Protobuf_INCLUDE_DIRS for compiler headers\")\n        endif()\n    else()\n        set(Protobuf_INCLUDE_DIRS \"/usr/include\")\n        message(STATUS \"Set Protobuf_INCLUDE_DIRS to /usr/include for compiler headers\")\n    endif()\n    # Also set Protobuf_INCLUDE_DIR (singular) for compatibility with older code\n    if(NOT Protobuf_INCLUDE_DIR)\n        list(GET Protobuf_INCLUDE_DIRS 0 Protobuf_INCLUDE_DIR)\n    endif()\n    # Set PROTOBUF_INCLUDE_DIR (all caps) for compatibility\n    if(NOT PROTOBUF_INCLUDE_DIR)\n        set(PROTOBUF_INCLUDE_DIR ${Protobuf_INCLUDE_DIR})\n    endif()"
+                # Now replace the placeholder with the full implementation including include directory fix
+                string(REPLACE 
+                    "@PROTOBUF_FIND_PACKAGE_PLACEHOLDER@"
+                    "find_package(Protobuf REQUIRED MODULE)\n    # Ensure /usr/include is in Protobuf_INCLUDE_DIRS for compiler headers\n    # On Ubuntu/Debian, libprotobuf-dev installs headers to /usr/include/google/protobuf/\n    if(Protobuf_INCLUDE_DIRS)\n        list(FIND Protobuf_INCLUDE_DIRS \"/usr/include\" PROTOBUF_HAS_USR_INCLUDE)\n        if(PROTOBUF_HAS_USR_INCLUDE EQUAL -1)\n            list(APPEND Protobuf_INCLUDE_DIRS \"/usr/include\")\n            message(STATUS \"Added /usr/include to Protobuf_INCLUDE_DIRS for compiler headers\")\n        endif()\n    else()\n        set(Protobuf_INCLUDE_DIRS \"/usr/include\")\n        message(STATUS \"Set Protobuf_INCLUDE_DIRS to /usr/include for compiler headers\")\n    endif()\n    # Also set Protobuf_INCLUDE_DIR (singular) for compatibility with older code\n    if(NOT Protobuf_INCLUDE_DIR)\n        list(GET Protobuf_INCLUDE_DIRS 0 Protobuf_INCLUDE_DIR)\n    endif()\n    # Set PROTOBUF_INCLUDE_DIR (all caps) for compatibility\n    if(NOT PROTOBUF_INCLUDE_DIR)\n        set(PROTOBUF_INCLUDE_DIR ${Protobuf_INCLUDE_DIR})\n    endif()"
                     ARCUS_CMAKE_CONTENT
                     "${ARCUS_CMAKE_CONTENT}"
                 )
@@ -147,6 +140,49 @@ if(USE_BUNDLED_DEPS)
                 file(WRITE "${ARCUS_CMAKE_FILE}" "${ARCUS_CMAKE_CONTENT}")
                 message(STATUS "Patched libArcus CMakeLists.txt to make standardprojectsettings optional and handle protobuf")
             endif()
+            # Find protobuf in parent scope before adding libArcus subdirectory
+            # This ensures protobuf targets are available when libArcus's CMakeLists.txt is processed
+            find_package(Protobuf REQUIRED MODULE)
+            # Ensure /usr/include is in Protobuf_INCLUDE_DIRS for compiler headers
+            if(Protobuf_INCLUDE_DIRS)
+                list(FIND Protobuf_INCLUDE_DIRS "/usr/include" PROTOBUF_HAS_USR_INCLUDE)
+                if(PROTOBUF_HAS_USR_INCLUDE EQUAL -1)
+                    list(APPEND Protobuf_INCLUDE_DIRS "/usr/include")
+                    message(STATUS "Added /usr/include to Protobuf_INCLUDE_DIRS for compiler headers")
+                endif()
+            else()
+                set(Protobuf_INCLUDE_DIRS "/usr/include")
+                message(STATUS "Set Protobuf_INCLUDE_DIRS to /usr/include for compiler headers")
+            endif()
+            # Create protobuf::libprotobuf target if it doesn't exist
+            if(NOT TARGET protobuf::libprotobuf)
+                # Get the actual library path (handle list case)
+                list(GET Protobuf_LIBRARIES 0 PROTOBUF_LIB_PATH)
+                if(NOT PROTOBUF_LIB_PATH)
+                    set(PROTOBUF_LIB_PATH ${Protobuf_LIBRARIES})
+                endif()
+                add_library(protobuf::libprotobuf SHARED IMPORTED)
+                # Use target_include_directories to set include dirs (more reliable than set_target_properties)
+                set_target_properties(protobuf::libprotobuf PROPERTIES
+                    IMPORTED_LOCATION "${PROTOBUF_LIB_PATH}"
+                )
+                # Set include directories using target_include_directories (handles lists correctly)
+                target_include_directories(protobuf::libprotobuf INTERFACE ${Protobuf_INCLUDE_DIRS})
+                message(STATUS "Created protobuf::libprotobuf imported target with includes: ${Protobuf_INCLUDE_DIRS}")
+            else()
+                # If target already exists, ensure /usr/include is in its include directories
+                get_target_property(EXISTING_PROTOBUF_INCLUDES protobuf::libprotobuf INTERFACE_INCLUDE_DIRECTORIES)
+                if(EXISTING_PROTOBUF_INCLUDES)
+                    list(FIND EXISTING_PROTOBUF_INCLUDES "/usr/include" PROTOBUF_TARGET_HAS_USR_INCLUDE)
+                    if(PROTOBUF_TARGET_HAS_USR_INCLUDE EQUAL -1)
+                        target_include_directories(protobuf::libprotobuf INTERFACE /usr/include)
+                        message(STATUS "Added /usr/include to existing protobuf::libprotobuf target")
+                    endif()
+                else()
+                    target_include_directories(protobuf::libprotobuf INTERFACE ${Protobuf_INCLUDE_DIRS})
+                    message(STATUS "Set include directories on existing protobuf::libprotobuf target: ${Protobuf_INCLUDE_DIRS}")
+                endif()
+            endif()
             # Define stub functions in parent scope before adding subdirectory
             # This ensures they're available when libArcus's CMakeLists.txt is processed
             if(NOT COMMAND set_project_warnings)
@@ -169,9 +205,28 @@ if(USE_BUNDLED_DEPS)
             # Add it as a subdirectory
             add_subdirectory(${arcus_SOURCE_DIR} ${arcus_BINARY_DIR} EXCLUDE_FROM_ALL)
             # Ensure /usr/include is in the Arcus target's include directories for protobuf compiler headers
+            # Also link to protobuf::libprotobuf to ensure protobuf includes are propagated
             if(TARGET Arcus)
+                # Add /usr/include using PUBLIC so it's available both when building Arcus and when using it
+                # This ensures the protobuf compiler headers are found during compilation
                 target_include_directories(Arcus PUBLIC /usr/include)
                 message(STATUS "Added /usr/include to Arcus target include directories for protobuf compiler headers")
+                
+                # Link to protobuf::libprotobuf to ensure protobuf includes are available
+                # This should propagate the protobuf include directories from protobuf::libprotobuf
+                if(TARGET protobuf::libprotobuf)
+                    target_link_libraries(Arcus PUBLIC protobuf::libprotobuf)
+                    message(STATUS "Linked Arcus target to protobuf::libprotobuf for include propagation")
+                    # Verify protobuf::libprotobuf has correct includes
+                    get_target_property(PROTOBUF_INTERFACE_INCLUDES protobuf::libprotobuf INTERFACE_INCLUDE_DIRECTORIES)
+                    message(STATUS "protobuf::libprotobuf INTERFACE_INCLUDE_DIRECTORIES: ${PROTOBUF_INTERFACE_INCLUDES}")
+                endif()
+                
+                # Debug: Show final include directories on Arcus target
+                get_target_property(ARCUS_FINAL_INCLUDES Arcus INTERFACE_INCLUDE_DIRECTORIES)
+                get_target_property(ARCUS_FINAL_PUBLIC_INCLUDES Arcus INCLUDE_DIRECTORIES)
+                message(STATUS "Arcus INTERFACE_INCLUDE_DIRECTORIES: ${ARCUS_FINAL_INCLUDES}")
+                message(STATUS "Arcus INCLUDE_DIRECTORIES: ${ARCUS_FINAL_PUBLIC_INCLUDES}")
             endif()
             # Create alias arcus::arcus for the Arcus target (libArcus creates target named "Arcus")
             if(TARGET Arcus AND NOT TARGET arcus::arcus)

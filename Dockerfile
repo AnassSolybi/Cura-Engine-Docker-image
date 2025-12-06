@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     protobuf-compiler \
     libprotobuf-dev \
+    libprotoc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install CMake 3.23+ from Kitware APT repository (required by libArcus)
