@@ -116,14 +116,16 @@ def patch_conanfile(filename):
             new_lines.append(line)
             i += 1
             # Add logic to remove @ultimaker reference before the onetbb check
+            # Code inside the loop should be indented by indent + 4 (one level deeper)
+            loop_indent = indent + 4
             if i < len(lines):
                 next_line = lines[i] if i < len(lines) else ''
-                # Insert logic to remove @ultimaker reference
-                new_lines.append(' ' * indent + '            # Remove @ultimaker reference (remote unreachable, try ConanCenter or build from source)\n')
-                new_lines.append(' ' * indent + '            if "@ultimaker" in req:\n')
-                new_lines.append(' ' * indent + '                req = req.split("@")[0]  # Remove @ultimaker reference\n')
-                new_lines.append(' ' * indent + '                print(f"Trying package without UltiMaker reference: {req}")\n')
-                # Now add the next line (onetbb check)
+                # Insert logic to remove @ultimaker reference (at loop body indent level)
+                new_lines.append(' ' * loop_indent + '# Remove @ultimaker reference (remote unreachable, try ConanCenter or build from source)\n')
+                new_lines.append(' ' * loop_indent + 'if "@ultimaker" in req:\n')
+                new_lines.append(' ' * (loop_indent + 4) + 'req = req.split("@")[0]  # Remove @ultimaker reference\n')
+                new_lines.append(' ' * (loop_indent + 4) + 'print(f"Trying package without UltiMaker reference: {req}")\n')
+                # Now add the next line (comment or onetbb check) - preserve its original indentation
                 new_lines.append(next_line)
                 i += 1
                 continue
@@ -135,12 +137,14 @@ def patch_conanfile(filename):
             new_lines.append(line)
             i += 1
             # Add logic to remove @ultimaker reference
+            # Code inside the loop should be indented by indent + 4 (one level deeper)
+            loop_indent = indent + 4
             if i < len(lines):
                 next_line = lines[i] if i < len(lines) else ''
-                new_lines.append(' ' * indent + '            # Remove @ultimaker reference (remote unreachable, try ConanCenter or build from source)\n')
-                new_lines.append(' ' * indent + '            if "@ultimaker" in req:\n')
-                new_lines.append(' ' * indent + '                req = req.split("@")[0]  # Remove @ultimaker reference\n')
-                new_lines.append(' ' * indent + '                print(f"Trying package without UltiMaker reference: {req}")\n')
+                new_lines.append(' ' * loop_indent + '# Remove @ultimaker reference (remote unreachable, try ConanCenter or build from source)\n')
+                new_lines.append(' ' * loop_indent + 'if "@ultimaker" in req:\n')
+                new_lines.append(' ' * (loop_indent + 4) + 'req = req.split("@")[0]  # Remove @ultimaker reference\n')
+                new_lines.append(' ' * (loop_indent + 4) + 'print(f"Trying package without UltiMaker reference: {req}")\n')
                 new_lines.append(next_line)
                 i += 1
                 continue
