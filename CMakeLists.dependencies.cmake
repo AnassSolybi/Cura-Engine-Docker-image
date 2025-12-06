@@ -45,7 +45,7 @@ if(USE_BUNDLED_DEPS)
         FetchContent_Declare(
             arcus
             GIT_REPOSITORY https://github.com/Ultimaker/libArcus.git
-            GIT_TAG        v5.11.0
+            GIT_TAG        5.11.0
             GIT_SHALLOW    TRUE
         )
         
