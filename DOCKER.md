@@ -36,16 +36,17 @@ Example:
 docker build --build-arg ULTIMAKER_CONAN_REMOTE_URL=https://your-ultimaker-remote-url.com -t curaengine:latest .
 ```
 
-**Note:** The build requires access to UltiMaker's Conan repository for packages like `sentrylibrary` and `npmpackage`. If the default URL doesn't work, you may need to:
-1. Obtain the correct UltiMaker Conan remote URL
-2. Configure authentication if the remote requires it
-3. Set the `ULTIMAKER_CONAN_REMOTE_URL` build argument
+**Note:** The Docker build uses a Docker-specific Conan recipe (`conanfile.docker.py`) that handles UltiMaker dependencies gracefully. The build will:
+1. Try to use UltiMaker packages if the remote is available
+2. Automatically fallback to ConanCenter versions or build from source if UltiMaker remote is unreachable
+3. Work without requiring UltiMaker remote access (packages will be built from source with `--build=missing`)
 
 The Dockerfile currently builds with all features enabled:
 - ARCUS communication: Enabled
 - Plugins: Enabled
 - Remote plugins: Enabled
 - Benchmarks: Disabled (for production)
+- Sentry support: Disabled (not needed for Docker deployments)
 
 ## Running the Container
 
@@ -226,17 +227,18 @@ healthcheck:
 1. **Out of memory**: Increase Docker memory limit or use a machine with more RAM
 2. **Conan download fails**: 
    - Check internet connection and Conan remote configuration
-   - If you see errors about `sentrylibrary/1.0.0` or `npmpackage` not found:
-     - The Dockerfile automatically detects if the UltiMaker remote is unreachable
-     - It will patch `conanfile.py` to work without these optional dependencies
-     - Sentry support will be disabled, but CuraEngine will still build
-     - If you have access to the UltiMaker remote, verify `ULTIMAKER_CONAN_REMOTE_URL` is correct
-     - Some packages like `clipper@ultimaker/stable` may still require UltiMaker remote access
+   - The Docker build uses `conanfile.docker.py` which handles UltiMaker dependencies gracefully
+   - If UltiMaker packages are unavailable, they will be built from source with `--build=missing`
+   - If you see errors about packages not being found:
+     - Ensure `--build=missing` is used (it's included in the Dockerfile)
+     - Check that ConanCenter remote is configured (it's added by default)
+     - Some packages may need to be built from source if recipes are available
 3. **Compiler errors**: Ensure you're using a compatible base image (Ubuntu 22.04)
-4. **UltiMaker remote not found**: 
-   - The default UltiMaker Conan remote URL may need to be adjusted
-   - Contact UltiMaker or check their documentation for the correct remote URL
-   - Some packages may require authentication - configure Conan credentials if needed
+4. **Package resolution errors**:
+   - The Docker conanfile uses fallback mechanisms for UltiMaker packages
+   - Packages like `clipper` and `mapbox-wagyu` will be resolved from ConanCenter or built from source
+   - If a package cannot be resolved, check if a Conan recipe exists in ConanCenter
+   - The build will fail with a clear error message if a required package cannot be found or built
 
 ### Runtime Issues
 
@@ -342,6 +344,8 @@ curl -X POST \
 - API server mode is recommended for production deployments
 - Runtime dependencies are minimized for security and size
 - The image runs as a non-root user for security
+- **Docker-specific Conan recipe**: Uses `conanfile.docker.py` which handles UltiMaker dependencies gracefully without patching
+- **No fragile patching**: The build system no longer relies on patching `conanfile.py`, making it more robust and maintainable
 
 ## License
 
