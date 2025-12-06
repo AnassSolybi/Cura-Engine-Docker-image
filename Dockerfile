@@ -118,8 +118,14 @@ COPY stubs ./stubs
 # Build CuraEngine with all features enabled
 # The Docker conanfile handles UltiMaker dependencies gracefully with fallbacks
 # Use cache mount for Conan cache to speed up subsequent builds
+# Use --build=missing to ensure any missing dependencies are built from source
 RUN --mount=type=cache,target=/root/.conan2 \
-    conan build . --output-folder=build
+    if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
+        REMOTE_FLAG="--remote=conancenter"; \
+    else \
+        REMOTE_FLAG=""; \
+    fi; \
+    conan build . --output-folder=build --build=missing --build=missing $REMOTE_FLAG
 
 # Find and copy the executable to a known location for the runtime stage
 RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/CuraEngine \; && \
