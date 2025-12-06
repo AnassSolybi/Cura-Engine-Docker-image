@@ -33,6 +33,19 @@ def patch_conanfile(filename):
             i += 1
             continue
         
+        # Handle super().config_options() and super().configure() calls
+        # These must be commented out since we removed python_requires_extend
+        # Check these early to catch them before other handlers
+        if 'super().config_options()' in stripped:
+            new_lines.append(' ' * indent + '# super().config_options()  # Disabled (no parent class after removing python_requires_extend)\n')
+            i += 1
+            continue
+        
+        if 'super().configure()' in stripped:
+            new_lines.append(' ' * indent + '# super().configure()  # Disabled (no parent class after removing python_requires_extend)\n')
+            i += 1
+            continue
+        
         # Handle init() method
         if 'def init(self):' in line:
             new_lines.append(line)
