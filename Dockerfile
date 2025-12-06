@@ -122,6 +122,7 @@ COPY stubs ./stubs
 RUN --mount=type=cache,target=/root/.conan2 \
     echo "Ensuring Conan profile exists..."; \
     conan profile detect --force || true; \
+    conan profile update settings.compiler.cppstd=20 default || true; \
     if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
         REMOTE_FLAG="--remote=conancenter"; \
     else \
@@ -143,7 +144,12 @@ RUN --mount=type=cache,target=/root/.conan2 \
     -s compiler.libcxx=libstdc++11 \
     -s compiler.cppstd=20 && \
     echo "Building CuraEngine..."; \
-    conan build . --output-folder=build
+    conan build . --output-folder=build \
+    -s build_type=Release \
+    -s compiler=gcc \
+    -s compiler.version=12 \
+    -s compiler.libcxx=libstdc++11 \
+    -s compiler.cppstd=20
 
 # Find and copy the executable to a known location for the runtime stage
 RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/CuraEngine \; && \
