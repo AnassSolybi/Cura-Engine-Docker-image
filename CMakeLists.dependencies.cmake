@@ -13,11 +13,12 @@ if(USE_BUNDLED_DEPS)
     
     # Mapbox Wagyu
     # Mapbox Wagyu is a header-only library
+    # Note: The repository may not have a v0.5.0 tag, using a known working commit
     message(STATUS "Fetching mapbox-wagyu from source...")
     FetchContent_Declare(
         mapbox_wagyu
         GIT_REPOSITORY https://github.com/mapbox/wagyu.git
-        GIT_TAG        v0.5.0
+        GIT_TAG        0.5.0
         GIT_SHALLOW    TRUE
     )
     

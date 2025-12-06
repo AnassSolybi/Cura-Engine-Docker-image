@@ -122,7 +122,6 @@ COPY stubs ./stubs
 RUN --mount=type=cache,target=/root/.conan2 \
     echo "Ensuring Conan profile exists..."; \
     conan profile detect --force || true; \
-    conan profile update settings.compiler.cppstd=20 default || true; \
     if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
         REMOTE_FLAG="--remote=conancenter"; \
     else \
