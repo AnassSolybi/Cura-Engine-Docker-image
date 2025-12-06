@@ -28,7 +28,9 @@ option(ENABLE_ARCUS "Enable support for ARCUS" ON)
 option(ENABLE_TESTING "Build with unit tests" OFF)
 option(ENABLE_BENCHMARKS "Build with Benchmarks" OFF)
 option(EXTENSIVE_WARNINGS "Build with all warnings" ON)
-option(ENABLE_PLUGINS "Build with plugins" ON)
+# ENABLE_PLUGINS defaults to OFF for Docker builds since gRPC definitions aren't available
+# Set to ON only if you have access to UltiMaker's Conan remote with curaengine_grpc_definitions
+option(ENABLE_PLUGINS "Build with plugins" OFF)
 option(ENABLE_REMOTE_PLUGINS "Build with all warnings" OFF)
 option(ENABLE_SENTRY "Send crash data via Sentry" OFF)
 option(ENABLE_MORE_COMPILER_OPTIMIZATION_FLAGS "Enable more optimization flags" ON)
@@ -61,9 +63,21 @@ if (${ENABLE_ARCUS} OR ${ENABLE_PLUGINS})
     endif()
 endif ()
 
+# Check if plugins can actually be built (requires curaengine_grpc_definitions)
+# If not available, automatically disable ENABLE_PLUGINS to avoid build errors
+if (${ENABLE_PLUGINS})
+    find_package(curaengine_grpc_definitions QUIET)
+    if(NOT curaengine_grpc_definitions_FOUND)
+        message(WARNING "curaengine_grpc_definitions not found - disabling ENABLE_PLUGINS")
+        message(STATUS "Note: curaengine_grpc_definitions is only available from UltiMaker Conan remote")
+        message(STATUS "Plugins require gRPC definitions. Building without plugin support.")
+        set(ENABLE_PLUGINS OFF CACHE BOOL "Build with plugins" FORCE)
+    endif()
+endif()
+
 MESSAGE(STATUS "Building with plugins support: ${ENABLE_PLUGINS}")
 if (${ENABLE_PLUGINS})
-    # asio-grpc and gRPC are optional for Docker builds (may not be available in ConanCenter)
+    # asio-grpc and gRPC are required for plugins
     find_package(asio-grpc QUIET)
     if(NOT asio-grpc_FOUND)
         message(WARNING "asio-grpc not found - gRPC plugin features will be unavailable")
@@ -73,10 +87,6 @@ if (${ENABLE_PLUGINS})
     if(NOT gRPC_FOUND)
         message(WARNING "gRPC not found - gRPC plugin features will be unavailable")
         message(STATUS "Note: gRPC may need to be installed separately or built from source")
-    endif()
-    find_package(curaengine_grpc_definitions QUIET)  # Optional - UltiMaker-specific, not available in ConanCenter
-    if(NOT curaengine_grpc_definitions_FOUND)
-        message(WARNING "curaengine_grpc_definitions not found - some advanced gRPC plugin features may be unavailable")
     endif()
     find_package(semver REQUIRED)
     MESSAGE(STATUS "Plugin secure remotes allowed: ${ENABLE_REMOTE_PLUGINS}")
@@ -235,6 +245,40 @@ set(engine_SRCS # Except main.cpp.
         src/geometry/conversions/Point2D_Point2LL.cpp
 )
 
+# Generate protobuf sources BEFORE creating the library
+# This ensures engine_PB_SRCS is populated when add_library is called
+if (ENABLE_ARCUS)
+    # Use bundled Arcus if fetched, otherwise use find_package
+    if(ARCUS_FETCHED)
+        message(STATUS "Using bundled libArcus from FetchContent")
+    else()
+        find_package(arcus REQUIRED)
+    endif()
+    # Enable proto3 optional fields support for older protoc versions (e.g., 3.12.x in Ubuntu 22.04)
+    # This flag is required because Cura.proto uses proto3 optional fields
+    set(PROTOBUF_GENERATE_CPP_APPEND_PATH OFF)
+    # Use custom command to generate protobuf with the experimental flag
+    get_target_property(PROTOC_EXECUTABLE protobuf::protoc IMPORTED_LOCATION)
+    if(NOT PROTOC_EXECUTABLE)
+        set(PROTOC_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
+    endif()
+    set(PROTO_FILE "${CMAKE_CURRENT_SOURCE_DIR}/Cura.proto")
+    set(PROTO_OUT_DIR "${CMAKE_CURRENT_BINARY_DIR}")
+    set(engine_PB_SRCS "${PROTO_OUT_DIR}/Cura.pb.cc")
+    set(engine_PB_HEADERS "${PROTO_OUT_DIR}/Cura.pb.h")
+    add_custom_command(
+        OUTPUT ${engine_PB_SRCS} ${engine_PB_HEADERS}
+        COMMAND ${PROTOC_EXECUTABLE}
+            --experimental_allow_proto3_optional
+            --cpp_out=${PROTO_OUT_DIR}
+            --proto_path=${CMAKE_CURRENT_SOURCE_DIR}
+            ${PROTO_FILE}
+        DEPENDS ${PROTO_FILE}
+        COMMENT "Running protobuf compiler on Cura.proto with proto3 optional support"
+        VERBATIM
+    )
+endif ()
+
 add_library(_CuraEngine STATIC ${engine_SRCS} ${engine_PB_SRCS})
 if (ENABLE_THREADING)
     use_threads(_CuraEngine)
@@ -271,14 +315,7 @@ if (${EXTENSIVE_WARNINGS})
 endif ()
 
 if (ENABLE_ARCUS)
-    # Use bundled Arcus if fetched, otherwise use find_package
-    if(ARCUS_FETCHED)
-        message(STATUS "Using bundled libArcus from FetchContent")
-        # protobuf_generate_cpp will be handled by arcus if it's built as subdirectory
-    else()
-        find_package(arcus REQUIRED)
-    endif()
-    protobuf_generate_cpp(engine_PB_SRCS engine_PB_HEADERS Cura.proto)
+    # Link to arcus (find_package and protobuf generation already done above)
     target_link_libraries(_CuraEngine PUBLIC arcus::arcus)
 endif ()
 

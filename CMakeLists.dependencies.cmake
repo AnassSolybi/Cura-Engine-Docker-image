@@ -11,8 +11,31 @@ option(USE_BUNDLED_DEPS "Use FetchContent to bundle dependencies instead of Cona
 if(USE_BUNDLED_DEPS)
     message(STATUS "Using bundled dependencies via FetchContent")
     
+    # Mapbox Geometry (dependency of wagyu)
+    # Header-only library providing geometry primitives
+    message(STATUS "Fetching mapbox-geometry from source...")
+    FetchContent_Declare(
+        mapbox_geometry
+        GIT_REPOSITORY https://github.com/mapbox/geometry.hpp.git
+        GIT_TAG        v2.0.3
+        GIT_SHALLOW    TRUE
+    )
+    
+    FetchContent_GetProperties(mapbox_geometry)
+    if(NOT mapbox_geometry_POPULATED)
+        FetchContent_Populate(mapbox_geometry)
+        add_library(mapbox-geometry INTERFACE)
+        target_include_directories(mapbox-geometry INTERFACE ${mapbox_geometry_SOURCE_DIR}/include)
+        add_library(mapbox-geometry::mapbox-geometry ALIAS mapbox-geometry)
+        set(MAPBOX_GEOMETRY_FETCHED TRUE)
+        message(STATUS "mapbox-geometry fetched and configured successfully")
+    else()
+        set(MAPBOX_GEOMETRY_FETCHED TRUE)
+        message(STATUS "mapbox-geometry already populated")
+    endif()
+    
     # Mapbox Wagyu
-    # Mapbox Wagyu is a header-only library
+    # Mapbox Wagyu is a header-only library that depends on mapbox-geometry
     # Note: The repository may not have a v0.5.0 tag, using a known working commit
     message(STATUS "Fetching mapbox-wagyu from source...")
     FetchContent_Declare(
@@ -30,6 +53,8 @@ if(USE_BUNDLED_DEPS)
         # The actual target will be created by find_package if needed, or we create it here
         add_library(mapbox-wagyu INTERFACE)
         target_include_directories(mapbox-wagyu INTERFACE ${mapbox_wagyu_SOURCE_DIR}/include)
+        # Link to mapbox-geometry to get its include directories
+        target_link_libraries(mapbox-wagyu INTERFACE mapbox-geometry)
         # Create alias for consistency with find_package
         add_library(mapbox-wagyu::mapbox-wagyu ALIAS mapbox-wagyu)
         set(MAPBOX_WAGYU_FETCHED TRUE)

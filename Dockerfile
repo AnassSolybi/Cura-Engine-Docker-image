@@ -107,8 +107,8 @@ RUN --mount=type=cache,target=/root/.conan2 \
     -c tools.system.package_manager:sudo=True \
     -c tools.build:jobs=${PARALLEL_JOBS} \
     -o enable_arcus=True \
-    -o enable_plugins=True \
-    -o enable_remote_plugins=True \
+    -o enable_plugins=False \
+    -o enable_remote_plugins=False \
     -o enable_benchmarks=False \
     -o enable_extensive_warnings=False \
     -s build_type=Release \
@@ -145,8 +145,8 @@ RUN --mount=type=cache,target=/root/.conan2 \
     -c tools.system.package_manager:sudo=True \
     -c tools.build:jobs=${PARALLEL_JOBS} \
     -o enable_arcus=True \
-    -o enable_plugins=True \
-    -o enable_remote_plugins=True \
+    -o enable_plugins=False \
+    -o enable_remote_plugins=False \
     -o enable_benchmarks=False \
     -o enable_extensive_warnings=False \
     -s build_type=Release \

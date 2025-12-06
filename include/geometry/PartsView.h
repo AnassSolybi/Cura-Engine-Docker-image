@@ -4,6 +4,7 @@
 #ifndef GEOMETRY_PARTS_VIEW_H
 #define GEOMETRY_PARTS_VIEW_H
 
+#include <cstddef>
 #include <vector>
 
 namespace cura

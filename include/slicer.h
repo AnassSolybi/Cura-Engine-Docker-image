@@ -10,6 +10,7 @@
 
 #include "geometry/LinesSet.h"
 #include "geometry/OpenLinesSet.h"
+#include "geometry/OpenPolyline.h"
 #include "geometry/Shape.h"
 #include "settings/EnumSettings.h"
 #include "utils/Point2F.h"
