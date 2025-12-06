@@ -4,8 +4,19 @@
 cmake_policy(SET CMP0091 NEW)  # For MSVC flags, will be ignored on non-Windows OS's
 cmake_minimum_required(VERSION 3.20)
 project(CuraEngine)
-find_package(standardprojectsettings REQUIRED)  # imports the cmake module https://github.com/Ultimaker/conan-ultimaker-index/recipes/standardprojectsettings
-AssureOutOfSourceBuilds()
+
+# standardprojectsettings is UltiMaker-specific and not available in ConanCenter
+# Provide a fallback implementation of AssureOutOfSourceBuilds()
+find_package(standardprojectsettings QUIET)
+if(standardprojectsettings_FOUND)
+    AssureOutOfSourceBuilds()
+else()
+    # Fallback implementation: ensure we're building out-of-source
+    if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
+        message(FATAL_ERROR "In-source builds are not allowed. Please create a build directory and run cmake from there.")
+    endif()
+    message(STATUS "Using fallback AssureOutOfSourceBuilds() - standardprojectsettings not found")
+endif()
 
 # Option to use bundled dependencies (default: ON for Docker builds)
 option(USE_BUNDLED_DEPS "Use FetchContent to bundle dependencies instead of Conan packages" ON)

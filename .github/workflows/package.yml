@@ -44,6 +44,10 @@ on:
 
 jobs:
   conan-package:
+    # Skip for pull requests from forks (they don't have access to Conan remote secrets)
+    # The reusable workflow requires Conan remote authentication secrets
+    # Configure these in repository settings if you want to enable package uploads
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     uses: ultimaker/cura-workflows/.github/workflows/conan-package.yml@main
     with:
       platform_wasm: true

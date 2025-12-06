@@ -107,7 +107,10 @@ class CuraEngineDockerConan(ConanFile):
                     f"{self.ref} requires C++{self._min_cppstd}, which your compiler does not support.")
 
     def build_requirements(self):
-        self.test_requires("standardprojectsettings/[>=0.2.0]")
+        # Skip standardprojectsettings - it's UltiMaker-specific and not available in ConanCenter
+        # It only provides AssureOutOfSourceBuilds() which we can implement ourselves
+        self.output.warning("Skipping standardprojectsettings - UltiMaker-specific package not available in ConanCenter")
+        # self.test_requires("standardprojectsettings/[>=0.2.0]")
         if not self.conf.get("tools.build:skip_test", False, check_type=bool):
             self.test_requires("gtest/1.14.0")
         if self.options.enable_benchmarks:
