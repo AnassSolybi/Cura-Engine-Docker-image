@@ -90,7 +90,7 @@ RUN --mount=type=cache,target=/root/.conan2 \
     fi; \
     echo "Installing dependencies (Docker conanfile will handle UltiMaker packages with fallbacks)..."; \
     echo "Using ${CONAN_CPU_COUNT} parallel jobs for builds"; \
-    conan install . --output-folder=build --build=missing:outdated $REMOTE_FLAG \
+    conan install . --output-folder=build --build=missing $REMOTE_FLAG \
     -c tools.system.package_manager:mode=install \
     -c tools.system.package_manager:sudo=True \
     -c tools.build:jobs=${PARALLEL_JOBS} \
