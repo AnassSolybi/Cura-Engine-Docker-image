@@ -41,30 +41,26 @@ COPY patch_conanfile.py ./
 # Copy Conan configuration files
 COPY conanfile.py conandata.yml ./
 
-# Add UltiMaker Conan remote (required for sentrylibrary, npmpackage, and other UltiMaker packages)
-# The conanfile.py requires packages from @ultimaker/ channels
-# If the default URL doesn't work, the build will automatically patch conanfile.py to work without them
+# Patch conanfile.py to remove UltiMaker python_requires dependencies
+# This is necessary because the UltiMaker Conan remote is often unreachable from Docker builds
+# Sentry support will be disabled, but CuraEngine will build successfully
+# IMPORTANT: This must happen BEFORE any conan commands, as python_requires are resolved at recipe load time
+RUN echo "Patching conanfile.py to work without UltiMaker python_requires (sentrylibrary/npmpackage)..."; \
+    python3 patch_conanfile.py conanfile.py || (echo "ERROR: Failed to patch conanfile.py" && cat patch_conanfile.py && exit 1); \
+    echo "conanfile.py patched successfully. Verifying patch..."; \
+    grep -q "# python_requires" conanfile.py && echo "Patch verified: python_requires commented out" || echo "WARNING: Patch may not have worked correctly"
+
+# Optionally add UltiMaker remote for other packages (clipper, mapbox-wagyu, etc.)
+# These may still be needed, but python_requires are now optional
 ARG ULTIMAKER_CONAN_REMOTE_URL=https://artifactory.ultimaker.com/artifactory/api/conan/conan-ultimaker
-
-# Try to add UltiMaker remote and test connectivity
 RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
-        if ! (conan remote list 2>/dev/null | grep -q "ultimaker"); then \
-            echo "Adding UltiMaker Conan remote: $ULTIMAKER_CONAN_REMOTE_URL"; \
-            conan remote add ultimaker "$ULTIMAKER_CONAN_REMOTE_URL" 2>/dev/null || true; \
-        fi; \
-        echo "Testing UltiMaker remote connectivity..."; \
-        if ! conan search "sentrylibrary/1.0.0" -r ultimaker >/dev/null 2>&1; then \
-            echo "WARNING: UltiMaker remote is unreachable. Patching conanfile.py to work without python_requires..."; \
-            python3 patch_conanfile.py conanfile.py; \
-        else \
-            echo "UltiMaker remote is accessible."; \
-        fi; \
-    else \
-        echo "No UltiMaker remote URL provided. Patching conanfile.py..."; \
-        python3 patch_conanfile.py conanfile.py; \
-    fi
-
-RUN echo "Configured Conan remotes:" && (conan remote list || echo "No remotes configured")
+        echo "Adding UltiMaker Conan remote for other packages: $ULTIMAKER_CONAN_REMOTE_URL"; \
+        conan remote add ultimaker "$ULTIMAKER_CONAN_REMOTE_URL" 2>/dev/null || \
+        (conan remote list 2>/dev/null | grep -q "ultimaker" && echo "UltiMaker remote already exists") || \
+        echo "Note: Could not add UltiMaker remote (may require authentication)"; \
+    fi; \
+    echo "Configured Conan remotes:"; \
+    conan remote list || echo "No remotes configured"
 
 # Create Conan profile with GCC 12
 RUN conan profile detect --force
