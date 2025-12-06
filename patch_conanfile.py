@@ -26,30 +26,40 @@ def patch_conanfile(filename):
         flags=re.MULTILINE
     )
     
-    # Comment out init() method's sentrylibrary usage - handle multiline more carefully
-    # First, try to match the exact pattern
+    # Comment out init() method's sentrylibrary usage and add pass statement
+    # Match the init() method with its two-line body
     init_pattern = r'(\s+)def init\(self\):\s*\n(\s+)base = self\.python_requires\["sentrylibrary"\]\.module\.SentryLibrary\s*\n(\s+)self\.options\.update\(base\.options, base\.default_options\)'
-    if re.search(init_pattern, content, re.MULTILINE):
-        content = re.sub(
-            init_pattern,
-            r'\1def init(self):\n\2# Sentry support disabled for Docker build (UltiMaker remote unreachable)\n\2# base = self.python_requires["sentrylibrary"].module.SentryLibrary\n\2# self.options.update(base.options, base.default_options)',
-            content,
-            flags=re.MULTILINE
-        )
+    replacement = r'\1def init(self):\n\2# Sentry support disabled for Docker build (UltiMaker remote unreachable)\n\2# base = self.python_requires["sentrylibrary"].module.SentryLibrary\n\2# self.options.update(base.options, base.default_options)\n\2pass'
+    
+    if re.search(init_pattern, content, re.MULTILINE | re.DOTALL):
+        content = re.sub(init_pattern, replacement, content, flags=re.MULTILINE | re.DOTALL)
     else:
-        # Fallback: comment out individual lines
-        content = re.sub(
-            r'^(\s+)base = self\.python_requires\["sentrylibrary"\]\.module\.SentryLibrary',
-            r'\1# base = self.python_requires["sentrylibrary"].module.SentryLibrary  # Disabled (UltiMaker remote unreachable)',
-            content,
-            flags=re.MULTILINE
-        )
-        content = re.sub(
-            r'^(\s+)self\.options\.update\(base\.options, base\.default_options\)',
-            r'\1# self.options.update(base.options, base.default_options)  # Disabled',
-            content,
-            flags=re.MULTILINE
-        )
+        # Fallback: process line by line to be more robust
+        lines = content.split('\n')
+        new_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            # Check if this is the init() method definition
+            if re.match(r'\s+def init\(self\):', line):
+                indent = len(line) - len(line.lstrip())
+                new_lines.append(line)
+                i += 1
+                # Add comment and pass, skipping the original body lines
+                new_lines.append(' ' * indent + '# Sentry support disabled for Docker build (UltiMaker remote unreachable)')
+                # Skip the two body lines
+                if i < len(lines) and 'python_requires["sentrylibrary"]' in lines[i]:
+                    new_lines.append(' ' * indent + '# ' + lines[i].lstrip())
+                    i += 1
+                if i < len(lines) and 'self.options.update' in lines[i]:
+                    new_lines.append(' ' * indent + '# ' + lines[i].lstrip())
+                    i += 1
+                # Add pass statement
+                new_lines.append(' ' * indent + 'pass')
+            else:
+                new_lines.append(line)
+                i += 1
+        content = '\n'.join(new_lines)
     
     # Comment out setup_cmake_toolchain_sentry call
     content = re.sub(
