@@ -69,6 +69,7 @@ RUN conan profile detect --force
 COPY CMakeLists.txt Cura.proto CuraEngine.ico CuraEngine.rc ./
 COPY include ./include
 COPY src ./src
+COPY stubs ./stubs
 # Note: benchmark, stress_benchmark, and tests are excluded as they're not needed for production build
 
 # Build CuraEngine with all features enabled

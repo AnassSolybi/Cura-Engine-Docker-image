@@ -150,6 +150,13 @@ class CuraEngineDockerConan(ConanFile):
             if req.startswith("onetbb/") and self.settings.arch == "wasm" and self.settings.os == "Emscripten":
                 continue
             
+            # Skip scripta - it's UltiMaker-specific and not available in ConanCenter
+            # It's only used for logging/debugging, so we can build without it
+            if "scripta" in req:
+                self.output.warn(f"Skipping {req} - UltiMaker-specific package not available in ConanCenter")
+                self.output.warn("scripta is only used for logging/debugging and is not required for production builds")
+                continue
+            
             # Handle UltiMaker packages with fallback
             if "@ultimaker" in req:
                 parts = req.split("@")[0].split("/")
