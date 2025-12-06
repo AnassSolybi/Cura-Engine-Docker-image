@@ -75,3 +75,6 @@ conanbuildinfo.txt
 conaninfo.txt
 graph_info.json
 build/*
+
+## CuraEngine-Docker-main (reference project, not part of this build)
+CuraEngine-Docker-main/

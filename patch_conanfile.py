@@ -2,103 +2,116 @@
 """
 Patch conanfile.py to remove dependency on UltiMaker python_requires
 when the UltiMaker Conan remote is unreachable.
+Uses a line-by-line approach to maintain valid Python syntax.
 """
 import sys
-import re
 
 def patch_conanfile(filename):
     with open(filename, 'r') as f:
-        content = f.read()
+        lines = f.readlines()
     
-    # Comment out python_requires line
-    content = re.sub(
-        r'^(\s*)python_requires = "sentrylibrary/1.0.0", "npmpackage/\[>=1.0.0\]"',
-        r'\1# python_requires commented out for Docker build (UltiMaker remote unreachable)\n\1# python_requires = "sentrylibrary/1.0.0", "npmpackage/[>=1.0.0]"',
-        content,
-        flags=re.MULTILINE
-    )
+    new_lines = []
+    i = 0
     
-    # Comment out python_requires_extend line
-    content = re.sub(
-        r'^(\s*)python_requires_extend = "sentrylibrary.SentryLibrary"',
-        r'\1# python_requires_extend commented out\n\1# python_requires_extend = "sentrylibrary.SentryLibrary"',
-        content,
-        flags=re.MULTILINE
-    )
-    
-    # Comment out init() method's sentrylibrary usage and add pass statement
-    # Match the init() method with its two-line body
-    init_pattern = r'(\s+)def init\(self\):\s*\n(\s+)base = self\.python_requires\["sentrylibrary"\]\.module\.SentryLibrary\s*\n(\s+)self\.options\.update\(base\.options, base\.default_options\)'
-    replacement = r'\1def init(self):\n\2# Sentry support disabled for Docker build (UltiMaker remote unreachable)\n\2# base = self.python_requires["sentrylibrary"].module.SentryLibrary\n\2# self.options.update(base.options, base.default_options)\n\2pass'
-    
-    if re.search(init_pattern, content, re.MULTILINE | re.DOTALL):
-        content = re.sub(init_pattern, replacement, content, flags=re.MULTILINE | re.DOTALL)
-    else:
-        # Fallback: process line by line to be more robust
-        lines = content.split('\n')
-        new_lines = []
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            # Check if this is the init() method definition
-            if re.match(r'\s+def init\(self\):', line):
-                indent = len(line) - len(line.lstrip())
-                new_lines.append(line)
+    while i < len(lines):
+        line = lines[i]
+        original_line = line
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+        
+        # Handle python_requires line
+        if 'python_requires = "sentrylibrary/1.0.0"' in line:
+            new_lines.append(' ' * indent + '# python_requires commented out for Docker build (UltiMaker remote unreachable)\n')
+            new_lines.append(' ' * indent + '# python_requires = "sentrylibrary/1.0.0", "npmpackage/[>=1.0.0]"\n')
+            i += 1
+            continue
+        
+        # Handle python_requires_extend line
+        if 'python_requires_extend = "sentrylibrary.SentryLibrary"' in line:
+            new_lines.append(' ' * indent + '# python_requires_extend commented out\n')
+            new_lines.append(' ' * indent + '# python_requires_extend = "sentrylibrary.SentryLibrary"\n')
+            i += 1
+            continue
+        
+        # Handle init() method
+        if 'def init(self):' in line:
+            new_lines.append(line)
+            i += 1
+            # Skip and comment out the next two lines (the body)
+            if i < len(lines) and 'python_requires["sentrylibrary"]' in lines[i]:
+                new_lines.append(' ' * indent + '    # Sentry support disabled for Docker build (UltiMaker remote unreachable)\n')
+                new_lines.append(' ' * indent + '    # ' + lines[i].lstrip())
                 i += 1
-                # Add comment and pass, skipping the original body lines
-                new_lines.append(' ' * indent + '# Sentry support disabled for Docker build (UltiMaker remote unreachable)')
-                # Skip the two body lines
-                if i < len(lines) and 'python_requires["sentrylibrary"]' in lines[i]:
-                    new_lines.append(' ' * indent + '# ' + lines[i].lstrip())
-                    i += 1
-                if i < len(lines) and 'self.options.update' in lines[i]:
-                    new_lines.append(' ' * indent + '# ' + lines[i].lstrip())
-                    i += 1
-                # Add pass statement
-                new_lines.append(' ' * indent + 'pass')
+            if i < len(lines) and 'self.options.update' in lines[i]:
+                new_lines.append(' ' * indent + '    # ' + lines[i].lstrip())
+                i += 1
+            # Add pass statement
+            new_lines.append(' ' * indent + '    pass\n')
+            continue
+        
+        # Handle setup_cmake_toolchain_sentry
+        if 'self.setup_cmake_toolchain_sentry(tc)' in line:
+            new_lines.append(' ' * indent + '# self.setup_cmake_toolchain_sentry(tc)  # Disabled (UltiMaker remote unreachable)\n')
+            i += 1
+            continue
+        
+        # Handle send_sentry_debug_files
+        if 'self.send_sentry_debug_files(binary_basename="CuraEngine")' in line:
+            new_lines.append(' ' * indent + '# self.send_sentry_debug_files(binary_basename="CuraEngine")  # Disabled (UltiMaker remote unreachable)\n')
+            i += 1
+            continue
+        
+        # Handle npmpackage in Emscripten if block
+        if 'if self.settings.os == "Emscripten":' in line:
+            new_lines.append(line)
+            i += 1
+            # Check if next line is the npmpackage line
+            if i < len(lines) and 'python_requires["npmpackage"]' in lines[i]:
+                # Comment it out and add pass
+                new_lines.append(' ' * indent + '    # self.python_requires["npmpackage"].module.conf_package_json(self)  # Disabled (UltiMaker remote unreachable)\n')
+                new_lines.append(' ' * indent + '    pass\n')
+                i += 1
             else:
-                new_lines.append(line)
-                i += 1
-        content = '\n'.join(new_lines)
+                # Always add pass even if npmpackage line not found (prevents empty if block)
+                new_lines.append(' ' * indent + '    pass  # npmpackage disabled (UltiMaker remote unreachable)\n')
+            continue
+        
+        # Handle npmpackage line if not in Emscripten block (shouldn't happen, but just in case)
+        if 'python_requires["npmpackage"]' in line:
+            new_lines.append(' ' * indent + '# ' + line.lstrip())
+            i += 1
+            continue
+        
+        # Default: keep the line as-is
+        new_lines.append(line)
+        i += 1
     
-    # Comment out setup_cmake_toolchain_sentry call
-    content = re.sub(
-        r'(\s+)self\.setup_cmake_toolchain_sentry\(tc\)',
-        r'\1# self.setup_cmake_toolchain_sentry(tc)  # Disabled (UltiMaker remote unreachable)',
-        content,
-        flags=re.MULTILINE
-    )
-    
-    # Comment out send_sentry_debug_files call
-    content = re.sub(
-        r'(\s+)self\.send_sentry_debug_files\(binary_basename="CuraEngine"\)',
-        r'\1# self.send_sentry_debug_files(binary_basename="CuraEngine")  # Disabled (UltiMaker remote unreachable)',
-        content,
-        flags=re.MULTILINE
-    )
-    
-    # Comment out npmpackage usage
-    content = re.sub(
-        r'(\s+)self\.python_requires\["npmpackage"\]\.module\.conf_package_json\(self\)',
-        r'\1# self.python_requires["npmpackage"].module.conf_package_json(self)  # Disabled (UltiMaker remote unreachable)',
-        content,
-        flags=re.MULTILINE
-    )
-    
+    # Write the patched file
     with open(filename, 'w') as f:
-        f.write(content)
+        f.writelines(new_lines)
     
-    # Verify the patch worked
-    if '# python_requires' in content or 'python_requires = []' in content:
+    # Verify the patch
+    content = ''.join(new_lines)
+    if '# python_requires' in content:
         print(f"Successfully patched {filename}")
         print("  - python_requires commented out")
         if '# python_requires_extend' in content:
             print("  - python_requires_extend commented out")
-        if '# base = self.python_requires' in content or '# Sentry support disabled' in content:
-            print("  - init() method patched")
+        if 'def init(self):' in content and 'pass' in content:
+            print("  - init() method patched with pass statement")
+        if 'if self.settings.os == "Emscripten":' in content:
+            print("  - Emscripten if block patched")
     else:
         print(f"WARNING: Patch may not have worked correctly for {filename}")
-        print("  python_requires line may still be active")
+        sys.exit(1)
+    
+    # Verify Python syntax
+    try:
+        compile(content, filename, 'exec')
+        print("  - Python syntax verified")
+    except SyntaxError as e:
+        print(f"ERROR: Patched file has syntax errors: {e}")
+        print(f"  Line {e.lineno}: {e.text}")
         sys.exit(1)
 
 if __name__ == '__main__':
@@ -107,4 +120,3 @@ if __name__ == '__main__':
         sys.exit(1)
     
     patch_conanfile(sys.argv[1])
-

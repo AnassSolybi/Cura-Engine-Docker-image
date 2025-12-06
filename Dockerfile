@@ -97,20 +97,31 @@ RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/
 # Runtime stage
 FROM ubuntu:22.04 AS runtime
 
-# Install runtime dependencies
+# Install runtime dependencies and Node.js
 RUN apt-get update && apt-get install -y \
     libstdc++6 \
     libgcc-s1 \
     ca-certificates \
+    curl \
+    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
+# Create non-root user and directories
 RUN useradd -m -u 1000 curaengine && \
-    mkdir -p /app /data && \
+    mkdir -p /app /data /app/server/uploads /app/server/outputs && \
     chown -R curaengine:curaengine /app /data
 
 # Copy CuraEngine executable from builder (from known location)
 COPY --from=builder /build/CuraEngine /app/CuraEngine
+
+# Copy API server files
+COPY server/ /app/server/
+
+# Install Node.js dependencies for API server (as root, before switching user)
+WORKDIR /app/server
+RUN npm install --production && \
+    npm cache clean --force
 
 # Copy entrypoint script
 COPY entrypoint.sh /app/entrypoint.sh
@@ -119,7 +130,7 @@ COPY entrypoint.sh /app/entrypoint.sh
 # (Most dependencies should be statically linked, but we copy just in case)
 RUN ldd /app/CuraEngine || true
 
-# Make entrypoint executable and set ownership
+# Make entrypoint executable and set ownership (before switching to non-root user)
 RUN chmod +x /app/entrypoint.sh && \
     chown -R curaengine:curaengine /app
 

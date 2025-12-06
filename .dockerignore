@@ -48,6 +48,11 @@ benchmark/
 Dockerfile*
 docker-compose*.yml
 .dockerignore
+# But include server directory for API
+!server/
+
+# Reference project (not needed for build)
+CuraEngine-Docker-main/
 
 # CI/CD
 .github/

@@ -49,9 +49,53 @@ The Dockerfile currently builds with all features enabled:
 
 ## Running the Container
 
+### API Server Mode (Recommended)
+
+The container includes a Node.js Express API server for HTTP-based slicing. This is the default mode when using docker-compose.
+
+**Using Docker Compose:**
+```bash
+docker-compose up -d
+```
+
+The API server will be available at `http://localhost:3000`
+
+**Using Docker Run:**
+```bash
+docker run -d \
+  -p 3000:3000 \
+  --name curaengine-api \
+  curaengine:latest api
+```
+
+**API Endpoints:**
+- `GET /` - Health check and API information
+- `GET /health` - Health check endpoint
+- `POST /slice` - Slice a 3D model file
+  - Form data: `uploaded_file` (multipart/form-data)
+  - Optional: `printer_def` - Path to printer definition JSON
+  - Optional: `settings` - JSON string with custom settings
+  - Returns: G-code file as download
+
+**Example API Usage:**
+```bash
+# Using curl
+curl -X POST \
+  -F "uploaded_file=@model.stl" \
+  http://localhost:3000/slice \
+  --output output.gcode
+
+# Using curl with custom settings
+curl -X POST \
+  -F "uploaded_file=@model.stl" \
+  -F "settings={\"infill_line_distance\":0}" \
+  http://localhost:3000/slice \
+  --output output.gcode
+```
+
 ### Command-Line Mode
 
-Run CuraEngine with command-line arguments:
+Run CuraEngine directly with command-line arguments:
 
 ```bash
 docker run --rm curaengine:latest --help
@@ -76,7 +120,7 @@ docker run --rm \
 mkdir -p data config
 ```
 
-2. Start the service:
+2. Start the service (API server mode by default):
 
 ```bash
 docker-compose up -d
@@ -88,11 +132,17 @@ docker-compose up -d
 docker-compose logs -f
 ```
 
-4. Stop the service:
+4. Access the API:
+
+The API server will be running at `http://localhost:3000`
+
+5. Stop the service:
 
 ```bash
 docker-compose down
 ```
+
+**Note:** To run in CLI mode instead of API mode, modify `docker-compose.yml` and change the `command` to `["--help"]` or your desired CuraEngine command.
 
 ### Arcus Communication Mode
 
@@ -138,6 +188,8 @@ docker run --rm \
 The container supports the following environment variables:
 
 - `TZ`: Timezone (default: UTC)
+- `PORT`: API server port (default: 3000)
+- `RUN_API_SERVER`: Set to "true" to run API server mode (default in docker-compose)
 
 Additional environment variables can be added to `docker-compose.yml` as needed.
 
@@ -250,6 +302,46 @@ Note: This requires Docker Buildx and may need adjustments to the Dockerfile for
 For issues related to:
 - **CuraEngine functionality**: See [CuraEngine GitHub Issues](https://github.com/Ultimaker/CuraEngine/issues)
 - **Docker setup**: Check this documentation or create an issue in the repository
+
+## API Server Features
+
+The Docker image includes a Node.js Express API server that provides:
+
+- **REST API** for slicing 3D models via HTTP
+- **File upload** support (multipart/form-data) with 100MB file size limit
+- **G-code download** as response
+- **Health check endpoints** (`GET /` and `GET /health`) for monitoring
+- **Error handling** and comprehensive logging
+- **Custom settings** support via JSON parameters
+
+The API server runs on port 3000 by default and can be accessed via:
+- Docker Compose: `http://localhost:3000`
+- Docker Run: Map port `-p 3000:3000`
+
+**API Usage Example:**
+```bash
+# Upload and slice a model
+curl -X POST \
+  -F "uploaded_file=@model.stl" \
+  http://localhost:3000/slice \
+  --output output.gcode
+
+# With custom settings
+curl -X POST \
+  -F "uploaded_file=@model.stl" \
+  -F 'settings={"infill_line_distance":0,"layer_height":0.2}' \
+  http://localhost:3000/slice \
+  --output output.gcode
+```
+
+## Notes
+
+- The final image is optimized for production use
+- All CuraEngine features are enabled (ARCUS, plugins, remote plugins)
+- The image includes both CLI and API server modes
+- API server mode is recommended for production deployments
+- Runtime dependencies are minimized for security and size
+- The image runs as a non-root user for security
 
 ## License
 

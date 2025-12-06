@@ -17,11 +17,14 @@ services:
       - ./config:/config:ro
     environment:
       - TZ=UTC
+      - PORT=3000
+      - RUN_API_SERVER=true
       # Add any additional environment variables as needed
-    # Ports for Arcus communication (if using Arcus mode)
-    # Uncomment and adjust if needed:
-    # ports:
-    #   - "49674:49674"  # Default Arcus port
+    # Ports for API server and Arcus communication
+    ports:
+      - "3000:3000"  # API server port
+      # Uncomment for Arcus mode:
+      # - "49674:49674"  # Default Arcus port
     # Health check (basic - adjust based on your needs)
     healthcheck:
       test: ["CMD", "/app/CuraEngine", "--help"]
@@ -38,8 +41,11 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-    # Command override (uncomment to use specific command)
+    # Command override
+    # For API server mode (default):
+    command: ["api"]
+    # For CLI mode:
     # command: ["--help"]
-    # For Arcus mode, you might want to use:
+    # For Arcus mode:
     # command: ["--connect", "0.0.0.0", "49674"]
 
