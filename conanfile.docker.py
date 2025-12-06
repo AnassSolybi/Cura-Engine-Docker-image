@@ -90,7 +90,7 @@ class CuraEngineDockerConan(ConanFile):
             try:
                 self.options["arcus"].shared = True
             except Exception:
-                self.output.warn("Could not configure arcus options (may not be available)")
+                self.output.warning("Could not configure arcus options (may not be available)")
         # Force all libraries to be static for Emscripten builds
         if self.settings.os == "Emscripten":
             self.options["*"].shared = False
@@ -153,8 +153,8 @@ class CuraEngineDockerConan(ConanFile):
             # Skip scripta - it's UltiMaker-specific and not available in ConanCenter
             # It's only used for logging/debugging, so we can build without it
             if "scripta" in req:
-                self.output.warn(f"Skipping {req} - UltiMaker-specific package not available in ConanCenter")
-                self.output.warn("scripta is only used for logging/debugging and is not required for production builds")
+                self.output.warning(f"Skipping {req} - UltiMaker-specific package not available in ConanCenter")
+                self.output.warning("scripta is only used for logging/debugging and is not required for production builds")
                 continue
             
             # Handle UltiMaker packages with fallback
