@@ -25,7 +25,21 @@ docker build -t curaengine:latest .
 docker build -t curaengine:v5.12.0 .
 ```
 
-### Build Arguments (if needed in future)
+### Build Arguments
+
+The Dockerfile supports the following build argument:
+
+- `ULTIMAKER_CONAN_REMOTE_URL`: URL for the UltiMaker Conan remote (default: `https://artifactory.ultimaker.com/artifactory/api/conan/conan-ultimaker`)
+
+Example:
+```bash
+docker build --build-arg ULTIMAKER_CONAN_REMOTE_URL=https://your-ultimaker-remote-url.com -t curaengine:latest .
+```
+
+**Note:** The build requires access to UltiMaker's Conan repository for packages like `sentrylibrary` and `npmpackage`. If the default URL doesn't work, you may need to:
+1. Obtain the correct UltiMaker Conan remote URL
+2. Configure authentication if the remote requires it
+3. Set the `ULTIMAKER_CONAN_REMOTE_URL` build argument
 
 The Dockerfile currently builds with all features enabled:
 - ARCUS communication: Enabled
@@ -158,8 +172,18 @@ healthcheck:
 ### Build Fails
 
 1. **Out of memory**: Increase Docker memory limit or use a machine with more RAM
-2. **Conan download fails**: Check internet connection and Conan remote configuration
+2. **Conan download fails**: 
+   - Check internet connection and Conan remote configuration
+   - If you see errors about `sentrylibrary/1.0.0` or `npmpackage` not found:
+     - The build requires access to UltiMaker's Conan repository
+     - Verify the `ULTIMAKER_CONAN_REMOTE_URL` is correct
+     - Check if authentication is required for the remote
+     - Run `docker build --build-arg ULTIMAKER_CONAN_REMOTE_URL=<correct-url> ...`
 3. **Compiler errors**: Ensure you're using a compatible base image (Ubuntu 22.04)
+4. **UltiMaker remote not found**: 
+   - The default UltiMaker Conan remote URL may need to be adjusted
+   - Contact UltiMaker or check their documentation for the correct remote URL
+   - Some packages may require authentication - configure Conan credentials if needed
 
 ### Runtime Issues
 

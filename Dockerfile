@@ -38,6 +38,19 @@ WORKDIR /build
 # Copy Conan configuration files
 COPY conanfile.py conandata.yml ./
 
+# Add UltiMaker Conan remote (required for sentrylibrary, npmpackage, and other UltiMaker packages)
+# The conanfile.py requires packages from @ultimaker/ channels
+# If the default URL doesn't work, you may need to:
+# 1. Set ULTIMAKER_CONAN_REMOTE_URL build arg with the correct URL
+# 2. Configure authentication if the remote requires it
+ARG ULTIMAKER_CONAN_REMOTE_URL=https://artifactory.ultimaker.com/artifactory/api/conan/conan-ultimaker
+RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
+        (conan remote list | grep -q "ultimaker" && echo "UltiMaker remote already exists") || \
+        conan remote add ultimaker "$ULTIMAKER_CONAN_REMOTE_URL" || \
+        (echo "ERROR: Failed to add UltiMaker remote. Please check ULTIMAKER_CONAN_REMOTE_URL or configure authentication." && exit 1); \
+    fi
+RUN echo "Configured Conan remotes:" && conan remote list
+
 # Create Conan profile with GCC 12
 RUN conan profile detect --force
 
