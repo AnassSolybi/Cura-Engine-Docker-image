@@ -49,6 +49,16 @@ RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
         (conan remote list 2>/dev/null | grep -q "ultimaker" && echo "UltiMaker remote already exists") || \
         echo "Note: Could not add UltiMaker remote (will use fallbacks)"; \
     fi; \
+    echo "Testing UltiMaker remote connectivity..."; \
+    if conan remote list 2>/dev/null | grep -q "ultimaker"; then \
+        if ! timeout 5 curl -s --max-time 5 "$ULTIMAKER_CONAN_REMOTE_URL/v1/ping" > /dev/null 2>&1; then \
+            echo "WARNING: UltiMaker remote is unreachable, removing it"; \
+            conan remote remove ultimaker 2>/dev/null || true; \
+            echo "UltiMaker remote removed - packages will be resolved from ConanCenter or built from source"; \
+        else \
+            echo "UltiMaker remote is reachable"; \
+        fi; \
+    fi; \
     echo "Configured Conan remotes:"; \
     conan remote list || echo "No remotes configured"
 
@@ -63,8 +73,16 @@ COPY src ./src
 
 # Build CuraEngine with all features enabled
 # The Docker conanfile handles UltiMaker dependencies gracefully with fallbacks
-RUN echo "Installing dependencies (Docker conanfile will handle UltiMaker packages with fallbacks)..."; \
-    conan install . --output-folder=build --build=missing \
+# Use only ConanCenter remote if UltiMaker remote was removed (to avoid connection errors)
+RUN if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
+        echo "UltiMaker remote not available - using only ConanCenter remote"; \
+        REMOTE_FLAG="--remote=conancenter"; \
+    else \
+        echo "UltiMaker remote available - will try all remotes"; \
+        REMOTE_FLAG=""; \
+    fi; \
+    echo "Installing dependencies (Docker conanfile will handle UltiMaker packages with fallbacks)..."; \
+    conan install . --output-folder=build --build=missing $REMOTE_FLAG \
     -c tools.system.package_manager:mode=install \
     -c tools.system.package_manager:sudo=True \
     -o enable_arcus=True \
