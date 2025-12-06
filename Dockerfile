@@ -90,6 +90,8 @@ RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
 # This layer will be cached and reused when dependencies don't change
 # Cache mount persists Conan packages across builds
 # Create profile within the cache mount to ensure it's available
+# Use --deployer=full_deploy to copy runtime libraries to a persistent directory
+# This is critical for cloud builds where cache mounts may not persist
 RUN --mount=type=cache,target=/root/.conan2 \
     echo "Creating Conan profile..."; \
     conan profile detect --force; \
@@ -103,6 +105,8 @@ RUN --mount=type=cache,target=/root/.conan2 \
     echo "Installing dependencies (Docker conanfile will handle UltiMaker packages with fallbacks)..."; \
     echo "Using ${CONAN_CPU_COUNT} parallel jobs for builds"; \
     conan install . --output-folder=build --build=missing $REMOTE_FLAG \
+    --deployer=full_deploy \
+    --deployer-folder=/build/deploy \
     -c tools.system.package_manager:mode=install \
     -c tools.system.package_manager:sudo=True \
     -c tools.build:jobs=${PARALLEL_JOBS} \
@@ -115,7 +119,9 @@ RUN --mount=type=cache,target=/root/.conan2 \
     -s compiler=gcc \
     -s compiler.version=12 \
     -s compiler.libcxx=libstdc++11 \
-    -s compiler.cppstd=20
+    -s compiler.cppstd=20 && \
+    echo "=== Deployed libraries ===" && \
+    find /build/deploy -name "*.so*" 2>/dev/null | head -20 || echo "No libraries in deploy folder yet"
 
 # Build stage - builds the actual application
 FROM deps AS builder
@@ -130,9 +136,8 @@ COPY stubs ./stubs
 # Build CuraEngine with all features enabled
 # The Docker conanfile handles UltiMaker dependencies gracefully with fallbacks
 # Re-run conan install to ensure all dependencies are available (they should be cached from deps stage)
+# Use --deployer=full_deploy to copy runtime libraries to /build/deploy (persists outside cache mount)
 # Then build the project using conan build
-# IMPORTANT: Also collect TBB libraries while cache is mounted (they won't be accessible after this RUN)
-# Conan 2.x stores packages in /root/.conan2/p/ (not /root/.conan2/data/)
 RUN --mount=type=cache,target=/root/.conan2 \
     echo "Ensuring Conan profile exists..."; \
     conan profile detect --force || true; \
@@ -141,8 +146,10 @@ RUN --mount=type=cache,target=/root/.conan2 \
     else \
         REMOTE_FLAG=""; \
     fi; \
-    echo "Re-installing dependencies to ensure they're available for build..."; \
+    echo "Re-installing dependencies with full_deploy to copy libraries..."; \
     conan install . --output-folder=build --build=missing $REMOTE_FLAG \
+    --deployer=full_deploy \
+    --deployer-folder=/build/deploy \
     -c tools.system.package_manager:mode=install \
     -c tools.system.package_manager:sudo=True \
     -c tools.build:jobs=${PARALLEL_JOBS} \
@@ -162,50 +169,32 @@ RUN --mount=type=cache,target=/root/.conan2 \
     -s compiler=gcc \
     -s compiler.version=12 \
     -s compiler.libcxx=libstdc++11 \
-    -s compiler.cppstd=20 && \
-    echo "=== Finding CuraEngine executable ===" && \
-    CURA_EXE=$(find /build/build -name "CuraEngine" -type f -executable | head -1) && \
-    echo "Found executable: $CURA_EXE" && \
-    mkdir -p /build/tbb_libs && \
-    echo "=== Using ldd to find TBB library paths ===" && \
-    ldd "$CURA_EXE" | grep -i tbb && \
-    for libpath in $(ldd "$CURA_EXE" | grep -i tbb | awk '{print $3}'); do \
-        if [ -f "$libpath" ]; then \
-            echo "Copying from ldd: $libpath"; \
-            cp -vL "$libpath" /build/tbb_libs/; \
-            libdir=$(dirname "$libpath"); \
-            for related in $(find "$libdir" -maxdepth 1 -name "libtbb*.so*" 2>/dev/null); do \
-                echo "Copying related: $related"; \
-                cp -vL "$related" /build/tbb_libs/ 2>/dev/null || true; \
-            done; \
-        fi; \
-    done && \
-    echo "=== Searching in Conan 2.x cache structure ===" && \
-    find /root/.conan2/p -name "libtbb*.so*" 2>/dev/null | head -20 && \
-    find /root/.conan2/p -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; && \
-    echo "=== TBB libraries collected ===" && \
-    ls -lah /build/tbb_libs/ && \
-    echo "Total TBB files: $(find /build/tbb_libs -name '*.so*' 2>/dev/null | wc -l)"
+    -s compiler.cppstd=20
 
 # Find and copy the executable to a known location for the runtime stage
-# Also use ldd to identify required libraries and copy them
 RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/CuraEngine \; && \
-    test -f /build/CuraEngine || (echo "Error: CuraEngine executable not found after build" && find /build/build -type f -name "*CuraEngine*" && exit 1) && \
-    echo "=== Checking CuraEngine library dependencies ===" && \
-    ldd /build/CuraEngine && \
-    echo "=== TBB-related dependencies ===" && \
-    ldd /build/CuraEngine | grep -i tbb || echo "No TBB in ldd output"
+    test -f /build/CuraEngine || (echo "Error: CuraEngine executable not found after build" && find /build/build -type f -name "*CuraEngine*" && exit 1)
 
-# Ensure TBB libraries directory exists and try to find any remaining TBB libraries
-# This catches libraries that might be in the build output or generators directory
+# Collect TBB libraries from the deploy directory (created by --deployer=full_deploy)
+# This does NOT rely on the cache mount - libraries are in /build/deploy/host/*/lib/
 RUN mkdir -p /build/tbb_libs && \
-    echo "=== Searching for TBB libraries in build output ===" && \
-    find /build -name "libtbb*.so*" 2>/dev/null && \
-    find /build -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; && \
+    echo "=== Collecting TBB libraries from deploy directory ===" && \
+    echo "Searching in /build/deploy for TBB libraries..." && \
+    find /build/deploy -name "libtbb*.so*" 2>/dev/null && \
+    find /build/deploy -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; && \
+    echo "=== Also checking build output directory ===" && \
+    find /build/build -name "libtbb*.so*" 2>/dev/null && \
+    find /build/build -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; && \
     echo "=== Final TBB libraries ===" && \
     ls -lah /build/tbb_libs/ && \
-    echo "Total files: $(ls /build/tbb_libs/*.so* 2>/dev/null | wc -l)" && \
+    echo "Total TBB files: $(find /build/tbb_libs -name '*.so*' 2>/dev/null | wc -l)" && \
     touch /build/tbb_libs/.placeholder
+
+# Verify CuraEngine dependencies
+RUN echo "=== Checking CuraEngine library dependencies ===" && \
+    ldd /build/CuraEngine && \
+    echo "=== TBB-related dependencies ===" && \
+    (ldd /build/CuraEngine | grep -i tbb || echo "No TBB in ldd output")
 
 # Runtime stage
 FROM ubuntu:22.04 AS runtime
