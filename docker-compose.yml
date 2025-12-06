@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  curaengine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: curaengine:latest
+    container_name: curaengine
+    restart: unless-stopped
+    user: "1000:1000"
+    working_dir: /app
+    volumes:
+      # Mount data directory for input/output files
+      - ./data:/data:rw
+      # Optional: mount configuration directory
+      - ./config:/config:ro
+    environment:
+      - TZ=UTC
+      # Add any additional environment variables as needed
+    # Ports for Arcus communication (if using Arcus mode)
+    # Uncomment and adjust if needed:
+    # ports:
+    #   - "49674:49674"  # Default Arcus port
+    # Health check (basic - adjust based on your needs)
+    healthcheck:
+      test: ["CMD", "/app/CuraEngine", "--help"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    # Resource limits (adjust based on your server capacity)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    # Command override (uncomment to use specific command)
+    # command: ["--help"]
+    # For Arcus mode, you might want to use:
+    # command: ["--connect", "0.0.0.0", "49674"]
+
