@@ -74,13 +74,13 @@ RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
     echo "Configured Conan remotes:"; \
     conan remote list || echo "No remotes configured"
 
-# Create Conan profile with GCC 12
-RUN conan profile detect --force
-
 # Install dependencies with BuildKit cache mount for Conan cache
 # This layer will be cached and reused when dependencies don't change
 # Cache mount persists Conan packages across builds
+# Create profile within the cache mount to ensure it's available
 RUN --mount=type=cache,target=/root/.conan2 \
+    echo "Creating Conan profile..."; \
+    conan profile detect --force; \
     if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
         echo "UltiMaker remote not available - using only ConanCenter remote"; \
         REMOTE_FLAG="--remote=conancenter"; \
@@ -120,6 +120,8 @@ COPY stubs ./stubs
 # Re-run conan install to ensure all dependencies are available (they should be cached from deps stage)
 # Then build the project using conan build
 RUN --mount=type=cache,target=/root/.conan2 \
+    echo "Ensuring Conan profile exists..."; \
+    conan profile detect --force || true; \
     if ! conan remote list 2>/dev/null | grep -q "ultimaker"; then \
         REMOTE_FLAG="--remote=conancenter"; \
     else \
