@@ -176,6 +176,7 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     libtbb2 \
+    libtbbmalloc2 \
     libprotobuf23 \
     && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs \
