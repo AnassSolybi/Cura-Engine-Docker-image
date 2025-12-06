@@ -19,12 +19,21 @@ ENV CONAN_CPU_COUNT=${CONAN_CPU_COUNT}
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
-    cmake \
     git \
     python3 \
     python3-pip \
     pkg-config \
     curl \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install CMake 3.23+ from Kitware APT repository (required by libArcus)
+RUN curl -fsSL https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor -o /usr/share/keyrings/kitware-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/kitware.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Conan 2.7.0+
