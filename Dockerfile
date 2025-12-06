@@ -132,6 +132,7 @@ COPY stubs ./stubs
 # Re-run conan install to ensure all dependencies are available (they should be cached from deps stage)
 # Then build the project using conan build
 # IMPORTANT: Also collect TBB libraries while cache is mounted (they won't be accessible after this RUN)
+# Conan 2.x stores packages in /root/.conan2/p/ (not /root/.conan2/data/)
 RUN --mount=type=cache,target=/root/.conan2 \
     echo "Ensuring Conan profile exists..."; \
     conan profile detect --force || true; \
@@ -162,29 +163,48 @@ RUN --mount=type=cache,target=/root/.conan2 \
     -s compiler.version=12 \
     -s compiler.libcxx=libstdc++11 \
     -s compiler.cppstd=20 && \
-    echo "Collecting TBB libraries while Conan cache is mounted..." && \
+    echo "=== Finding CuraEngine executable ===" && \
+    CURA_EXE=$(find /build/build -name "CuraEngine" -type f -executable | head -1) && \
+    echo "Found executable: $CURA_EXE" && \
     mkdir -p /build/tbb_libs && \
-    (find /root/.conan2 -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null | while read lib; do \
-        echo "Found TBB library: $lib"; \
-        cp -vL "$lib" /build/tbb_libs/ 2>/dev/null || true; \
-    done) && \
-    echo "TBB libraries collected:" && \
-    ls -lh /build/tbb_libs/ 2>/dev/null || echo "No TBB libraries found yet"
+    echo "=== Using ldd to find TBB library paths ===" && \
+    ldd "$CURA_EXE" | grep -i tbb && \
+    for libpath in $(ldd "$CURA_EXE" | grep -i tbb | awk '{print $3}'); do \
+        if [ -f "$libpath" ]; then \
+            echo "Copying from ldd: $libpath"; \
+            cp -vL "$libpath" /build/tbb_libs/; \
+            libdir=$(dirname "$libpath"); \
+            for related in $(find "$libdir" -maxdepth 1 -name "libtbb*.so*" 2>/dev/null); do \
+                echo "Copying related: $related"; \
+                cp -vL "$related" /build/tbb_libs/ 2>/dev/null || true; \
+            done; \
+        fi; \
+    done && \
+    echo "=== Searching in Conan 2.x cache structure ===" && \
+    find /root/.conan2/p -name "libtbb*.so*" 2>/dev/null | head -20 && \
+    find /root/.conan2/p -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; && \
+    echo "=== TBB libraries collected ===" && \
+    ls -lah /build/tbb_libs/ && \
+    echo "Total TBB files: $(find /build/tbb_libs -name '*.so*' 2>/dev/null | wc -l)"
 
 # Find and copy the executable to a known location for the runtime stage
+# Also use ldd to identify required libraries and copy them
 RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/CuraEngine \; && \
-    test -f /build/CuraEngine || (echo "Error: CuraEngine executable not found after build" && find /build/build -type f -name "*CuraEngine*" && exit 1)
+    test -f /build/CuraEngine || (echo "Error: CuraEngine executable not found after build" && find /build/build -type f -name "*CuraEngine*" && exit 1) && \
+    echo "=== Checking CuraEngine library dependencies ===" && \
+    ldd /build/CuraEngine && \
+    echo "=== TBB-related dependencies ===" && \
+    ldd /build/CuraEngine | grep -i tbb || echo "No TBB in ldd output"
 
 # Ensure TBB libraries directory exists and try to find any remaining TBB libraries
-# This catches libraries that might be in the build output rather than cache
+# This catches libraries that might be in the build output or generators directory
 RUN mkdir -p /build/tbb_libs && \
-    echo "Checking for additional TBB libraries in build output..." && \
-    (find /build/build -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null | while read lib; do \
-        echo "Found: $lib"; \
-        cp -vL "$lib" /build/tbb_libs/ 2>/dev/null || true; \
-    done || true) && \
-    echo "Final TBB libraries:" && \
-    (ls -lh /build/tbb_libs/*.so* 2>/dev/null || echo "Warning: No TBB libraries found") && \
+    echo "=== Searching for TBB libraries in build output ===" && \
+    find /build -name "libtbb*.so*" 2>/dev/null && \
+    find /build -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; && \
+    echo "=== Final TBB libraries ===" && \
+    ls -lah /build/tbb_libs/ && \
+    echo "Total files: $(ls /build/tbb_libs/*.so* 2>/dev/null | wc -l)" && \
     touch /build/tbb_libs/.placeholder
 
 # Runtime stage
