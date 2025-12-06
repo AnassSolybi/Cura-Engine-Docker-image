@@ -37,13 +37,43 @@ option(OLDER_APPLE_CLANG "Apple Clang <= 13 used" OFF)
 option(ENABLE_THREADING "Enable threading support" ON)
 
 if (${ENABLE_ARCUS} OR ${ENABLE_PLUGINS})
-    find_package(protobuf REQUIRED)
+    # Try to find protobuf via CMake config first (protobufConfig.cmake)
+    find_package(protobuf QUIET)
+    if(NOT protobuf_FOUND)
+        # Fall back to CMake's built-in FindProtobuf module (works with system protobuf)
+        message(STATUS "protobuf CMake config not found, trying FindProtobuf module...")
+        find_package(Protobuf REQUIRED MODULE)
+        # FindProtobuf module provides protobuf_generate_cpp function
+        # Create imported targets if they don't exist
+        if(NOT TARGET protobuf::libprotobuf)
+            add_library(protobuf::libprotobuf INTERFACE IMPORTED)
+            set_target_properties(protobuf::libprotobuf PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${Protobuf_INCLUDE_DIRS}"
+                INTERFACE_LINK_LIBRARIES "${Protobuf_LIBRARIES}"
+            )
+        endif()
+        if(NOT TARGET protobuf::protoc AND Protobuf_PROTOC_EXECUTABLE)
+            add_executable(protobuf::protoc IMPORTED)
+            set_target_properties(protobuf::protoc PROPERTIES
+                IMPORTED_LOCATION "${Protobuf_PROTOC_EXECUTABLE}"
+            )
+        endif()
+    endif()
 endif ()
 
 MESSAGE(STATUS "Building with plugins support: ${ENABLE_PLUGINS}")
 if (${ENABLE_PLUGINS})
-    find_package(asio-grpc REQUIRED)
-    find_package(gRPC REQUIRED)
+    # asio-grpc and gRPC are optional for Docker builds (may not be available in ConanCenter)
+    find_package(asio-grpc QUIET)
+    if(NOT asio-grpc_FOUND)
+        message(WARNING "asio-grpc not found - gRPC plugin features will be unavailable")
+        message(STATUS "Note: asio-grpc is typically only available from UltiMaker Conan remote")
+    endif()
+    find_package(gRPC QUIET)
+    if(NOT gRPC_FOUND)
+        message(WARNING "gRPC not found - gRPC plugin features will be unavailable")
+        message(STATUS "Note: gRPC may need to be installed separately or built from source")
+    endif()
     find_package(curaengine_grpc_definitions QUIET)  # Optional - UltiMaker-specific, not available in ConanCenter
     if(NOT curaengine_grpc_definitions_FOUND)
         message(WARNING "curaengine_grpc_definitions not found - some advanced gRPC plugin features may be unavailable")
@@ -271,7 +301,6 @@ find_package(fmt REQUIRED)
 find_package(range-v3 REQUIRED)
 find_package(scripta QUIET)  # Optional - UltiMaker-specific logging library, not available in ConanCenter
 if(scripta_FOUND)
-    target_link_libraries(_CuraEngine PUBLIC scripta::scripta)
     target_compile_definitions(_CuraEngine PRIVATE ENABLE_SCRIPTA)
     message(STATUS "scripta found - logging/debugging enabled")
 else()
@@ -301,7 +330,7 @@ target_link_libraries(_CuraEngine
         rapidjson
         stb::stb
         boost::boost
-        scripta::scripta
+        $<$<TARGET_EXISTS:scripta::scripta>:scripta::scripta>
         PNG::PNG
         $<$<TARGET_EXISTS:mapbox-wagyu::mapbox-wagyu>:mapbox-wagyu::mapbox-wagyu>
         $<$<NOT:$<BOOL:${EMSCRIPTEN}>>:onetbb::onetbb>
@@ -378,42 +407,66 @@ target_compile_definitions(CuraEngine PRIVATE
 
 # Compiling the test environment.
 if (ENABLE_TESTING OR ENABLE_BENCHMARKS)
-    set(TESTS_HELPERS_SRC tests/ReadTestPolygons.cpp)
+    set(TESTS_HELPERS_SRC)
+    
+    # Only add test files if they exist
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/ReadTestPolygons.cpp")
+        list(APPEND TESTS_HELPERS_SRC tests/ReadTestPolygons.cpp)
+    endif()
 
     set(TESTS_SRC_ARCUS)
     if (ENABLE_ARCUS)
         list(APPEND TESTS_SRC_ARCUS
                 ArcusCommunicationTest
                 ArcusCommunicationPrivateTest)
-        list(APPEND TESTS_HELPERS_SRC tests/arcus/MockSocket.cpp)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/arcus/MockSocket.cpp")
+            list(APPEND TESTS_HELPERS_SRC tests/arcus/MockSocket.cpp)
+        endif()
     endif ()
 
-    add_library(test_helpers ${TESTS_HELPERS_SRC})
-    target_compile_definitions(test_helpers PUBLIC $<$<BOOL:${BUILD_TESTING}>:BUILD_TESTS> $<$<BOOL:${ENABLE_ARCUS}>:ARCUS>)
-    target_include_directories(test_helpers PUBLIC "include" ${CMAKE_BINARY_DIR}/generated)
-    target_link_libraries(test_helpers PRIVATE
-            _CuraEngine
-            GTest::gtest
-            GTest::gmock
-            clipper::clipper
-            mapbox-wagyu::mapbox-wagyu
-            $<$<TARGET_EXISTS:curaengine_grpc_definitions::curaengine_grpc_definitions>:curaengine_grpc_definitions::curaengine_grpc_definitions>
-            $<$<TARGET_EXISTS:asio-grpc::asio-grpc>:asio-grpc::asio-grpc>
-            $<$<TARGET_EXISTS:grpc::grpc>:grpc::grpc>
-            $<$<TARGET_EXISTS:protobuf::libprotobuf>:protobuf::libprotobuf>)
-    if (ENABLE_ARCUS)
-        target_link_libraries(test_helpers PUBLIC arcus::arcus)
-    endif ()
+    # Only create test_helpers library if we have source files
+    if(TESTS_HELPERS_SRC)
+        add_library(test_helpers ${TESTS_HELPERS_SRC})
+        target_compile_definitions(test_helpers PUBLIC $<$<BOOL:${BUILD_TESTING}>:BUILD_TESTS> $<$<BOOL:${ENABLE_ARCUS}>:ARCUS>)
+        target_include_directories(test_helpers PUBLIC "include" ${CMAKE_BINARY_DIR}/generated)
+        target_link_libraries(test_helpers PRIVATE
+                _CuraEngine
+                GTest::gtest
+                GTest::gmock
+                clipper::clipper
+                mapbox-wagyu::mapbox-wagyu
+                $<$<TARGET_EXISTS:curaengine_grpc_definitions::curaengine_grpc_definitions>:curaengine_grpc_definitions::curaengine_grpc_definitions>
+                $<$<TARGET_EXISTS:asio-grpc::asio-grpc>:asio-grpc::asio-grpc>
+                $<$<TARGET_EXISTS:grpc::grpc>:grpc::grpc>
+                $<$<TARGET_EXISTS:protobuf::libprotobuf>:protobuf::libprotobuf>)
+        if (ENABLE_ARCUS)
+            target_link_libraries(test_helpers PUBLIC arcus::arcus)
+        endif ()
+    else()
+        message(WARNING "ENABLE_TESTING or ENABLE_BENCHMARKS is ON but test helper source files not found - skipping test_helpers library")
+    endif()
 endif ()
 
 if (ENABLE_BENCHMARKS)
-    add_subdirectory(benchmark)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/benchmark" AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/benchmark")
+        add_subdirectory(benchmark)
+    else()
+        message(WARNING "ENABLE_BENCHMARKS is ON but benchmark directory not found - skipping benchmarks")
+    endif()
     if (NOT WIN32)
-        add_subdirectory(stress_benchmark)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/stress_benchmark" AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/stress_benchmark")
+            add_subdirectory(stress_benchmark)
+        else()
+            message(WARNING "ENABLE_BENCHMARKS is ON but stress_benchmark directory not found - skipping stress benchmarks")
+        endif()
     endif ()
 endif ()
 
 if (ENABLE_TESTING)
     enable_testing()
-    add_subdirectory(tests)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests" AND IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+        add_subdirectory(tests)
+    else()
+        message(WARNING "ENABLE_TESTING is ON but tests directory not found - skipping tests")
+    endif()
 endif ()
