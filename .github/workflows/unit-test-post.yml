@@ -1,5 +1,11 @@
 name: Unit tests - publish
 
+permissions:
+  contents: read
+  checks: write
+  issues: read
+  pull-requests: write
+
 on:
   workflow_run:
     workflows: [Unit tests - run]
