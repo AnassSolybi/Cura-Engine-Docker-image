@@ -35,21 +35,36 @@ RUN gcc --version && g++ --version
 # Set working directory
 WORKDIR /build
 
+# Copy patching script first
+COPY patch_conanfile.py ./
+
 # Copy Conan configuration files
 COPY conanfile.py conandata.yml ./
 
 # Add UltiMaker Conan remote (required for sentrylibrary, npmpackage, and other UltiMaker packages)
 # The conanfile.py requires packages from @ultimaker/ channels
-# If the default URL doesn't work, you may need to:
-# 1. Set ULTIMAKER_CONAN_REMOTE_URL build arg with the correct URL
-# 2. Configure authentication if the remote requires it
+# If the default URL doesn't work, the build will automatically patch conanfile.py to work without them
 ARG ULTIMAKER_CONAN_REMOTE_URL=https://artifactory.ultimaker.com/artifactory/api/conan/conan-ultimaker
+
+# Try to add UltiMaker remote and test connectivity
 RUN if [ -n "$ULTIMAKER_CONAN_REMOTE_URL" ]; then \
-        (conan remote list | grep -q "ultimaker" && echo "UltiMaker remote already exists") || \
-        conan remote add ultimaker "$ULTIMAKER_CONAN_REMOTE_URL" || \
-        (echo "ERROR: Failed to add UltiMaker remote. Please check ULTIMAKER_CONAN_REMOTE_URL or configure authentication." && exit 1); \
+        if ! (conan remote list 2>/dev/null | grep -q "ultimaker"); then \
+            echo "Adding UltiMaker Conan remote: $ULTIMAKER_CONAN_REMOTE_URL"; \
+            conan remote add ultimaker "$ULTIMAKER_CONAN_REMOTE_URL" 2>/dev/null || true; \
+        fi; \
+        echo "Testing UltiMaker remote connectivity..."; \
+        if ! conan search "sentrylibrary/1.0.0" -r ultimaker >/dev/null 2>&1; then \
+            echo "WARNING: UltiMaker remote is unreachable. Patching conanfile.py to work without python_requires..."; \
+            python3 patch_conanfile.py conanfile.py; \
+        else \
+            echo "UltiMaker remote is accessible."; \
+        fi; \
+    else \
+        echo "No UltiMaker remote URL provided. Patching conanfile.py..."; \
+        python3 patch_conanfile.py conanfile.py; \
     fi
-RUN echo "Configured Conan remotes:" && conan remote list
+
+RUN echo "Configured Conan remotes:" && (conan remote list || echo "No remotes configured")
 
 # Create Conan profile with GCC 12
 RUN conan profile detect --force

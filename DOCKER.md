@@ -175,10 +175,11 @@ healthcheck:
 2. **Conan download fails**: 
    - Check internet connection and Conan remote configuration
    - If you see errors about `sentrylibrary/1.0.0` or `npmpackage` not found:
-     - The build requires access to UltiMaker's Conan repository
-     - Verify the `ULTIMAKER_CONAN_REMOTE_URL` is correct
-     - Check if authentication is required for the remote
-     - Run `docker build --build-arg ULTIMAKER_CONAN_REMOTE_URL=<correct-url> ...`
+     - The Dockerfile automatically detects if the UltiMaker remote is unreachable
+     - It will patch `conanfile.py` to work without these optional dependencies
+     - Sentry support will be disabled, but CuraEngine will still build
+     - If you have access to the UltiMaker remote, verify `ULTIMAKER_CONAN_REMOTE_URL` is correct
+     - Some packages like `clipper@ultimaker/stable` may still require UltiMaker remote access
 3. **Compiler errors**: Ensure you're using a compatible base image (Ubuntu 22.04)
 4. **UltiMaker remote not found**: 
    - The default UltiMaker Conan remote URL may need to be adjusted
