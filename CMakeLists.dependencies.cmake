@@ -40,12 +40,13 @@ if(USE_BUNDLED_DEPS)
     endif()
     
     # Arcus (only if ENABLE_ARCUS is True)
+    # Note: Using main branch as specific version tags may not exist
     if(ENABLE_ARCUS)
         message(STATUS "Fetching libArcus from source...")
         FetchContent_Declare(
             arcus
             GIT_REPOSITORY https://github.com/Ultimaker/libArcus.git
-            GIT_TAG        5.11.0
+            GIT_TAG        main
             GIT_SHALLOW    TRUE
         )
         
