@@ -178,11 +178,14 @@ RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/
     test -f /build/CuraEngine || (echo "Error: CuraEngine executable not found after build" && find /build/build -type f -name "*CuraEngine*" && exit 1)
 
 # Collect TBB libraries from multiple locations:
-# 1. Deploy directory (from --deployer=full_deploy)
-# 2. Conan cache directory (now a regular dir, not cache mount)
-# 3. Build output directory
+# 1. Use ldd to find actual library paths from CuraEngine
+# 2. Deploy directory (from --deployer=full_deploy)
+# 3. Conan cache directory (now a regular dir, not cache mount)
+# 4. Build output directory
 RUN mkdir -p /build/tbb_libs && \
     echo "=== Collecting TBB libraries ===" && \
+    echo "Step 0: Finding TBB libraries via ldd..." && \
+    (ldd /build/CuraEngine | grep -i tbb | awk '{print $3}' | xargs -I {} sh -c 'if [ -f "{}" ]; then echo "Found: {}"; cp -vL "{}" /build/tbb_libs/ 2>/dev/null || true; fi' || true) && \
     echo "Step 1: Checking deploy directory..." && \
     find /build/deploy -name "libtbb*.so*" 2>/dev/null && \
     find /build/deploy -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; || true && \
@@ -192,6 +195,9 @@ RUN mkdir -p /build/tbb_libs && \
     echo "Step 3: Checking build output directory..." && \
     find /build/build -name "libtbb*.so*" 2>/dev/null && \
     find /build/build -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; || true && \
+    echo "Step 4: Searching in Conan package directories..." && \
+    find /root/.conan2/p -name "libtbb*.so*" 2>/dev/null | head -20 && \
+    find /root/.conan2/p -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; || true && \
     echo "=== Final TBB libraries collected ===" && \
     ls -lah /build/tbb_libs/ && \
     echo "Total TBB files: $(find /build/tbb_libs -name '*.so*' 2>/dev/null | wc -l)" && \
@@ -199,6 +205,8 @@ RUN mkdir -p /build/tbb_libs && \
         echo "ERROR: No TBB libraries found! Build may fail at runtime."; \
         echo "Listing all .so files in /build:"; \
         find /build -name "*.so*" 2>/dev/null | head -50; \
+        echo "=== ldd output showing TBB dependencies ==="; \
+        ldd /build/CuraEngine | grep -i tbb || echo "No TBB in ldd output"; \
     fi && \
     touch /build/tbb_libs/.placeholder
 
@@ -212,7 +220,7 @@ RUN echo "=== Checking CuraEngine library dependencies ===" && \
 FROM ubuntu:22.04 AS runtime
 
 # Install runtime dependencies and Node.js
-# Note: We don't install libtbb2/libtbbmalloc2 from Ubuntu as we use Conan-built versions
+# Note: We try to use Conan-built versions first, but fallback to system packages if needed
 RUN apt-get update && apt-get install -y \
     libstdc++6 \
     libgcc-s1 \
@@ -239,12 +247,35 @@ COPY --from=builder /build/tbb_libs /tmp/tbb_libs
 RUN mkdir -p /usr/local/lib && \
     if [ -d /tmp/tbb_libs ] && [ "$(ls -A /tmp/tbb_libs 2>/dev/null)" ]; then \
         echo "Installing TBB libraries from builder stage..."; \
+        # Copy all files and preserve symlinks
+        cp -av /tmp/tbb_libs/*.so* /usr/local/lib/ 2>/dev/null || \
         cp -v /tmp/tbb_libs/*.so* /usr/local/lib/ 2>/dev/null || true; \
         echo "TBB libraries installed:"; \
         ls -lh /usr/local/lib/libtbb*.so* 2>/dev/null || echo "No TBB libraries found"; \
+        # Verify libtbb.so.12 specifically exists
+        if [ ! -f /usr/local/lib/libtbb.so.12 ] && [ ! -L /usr/local/lib/libtbb.so.12 ]; then \
+            echo "WARNING: libtbb.so.12 not found! Checking for alternatives..."; \
+            ls -la /usr/local/lib/libtbb* 2>/dev/null || true; \
+        else \
+            echo "SUCCESS: libtbb.so.12 found"; \
+        fi; \
         rm -rf /tmp/tbb_libs; \
     else \
         echo "Warning: No TBB libraries found in builder stage (may be statically linked)"; \
+    fi
+
+# Fallback: If TBB libraries weren't found from builder, install system packages
+# Note: System packages may have different version, but should work for most cases
+RUN if [ ! -f /usr/local/lib/libtbb.so.12 ] && [ ! -L /usr/local/lib/libtbb.so.12 ]; then \
+        echo "TBB libraries not found from builder, installing system packages as fallback..."; \
+        apt-get update && \
+        apt-get install -y libtbb2 libtbbmalloc2 && \
+        apt-get clean && \
+        rm -rf /var/lib/apt/lists/*; \
+        echo "System TBB packages installed"; \
+        ls -lh /usr/lib/x86_64-linux-gnu/libtbb*.so* 2>/dev/null || true; \
+    else \
+        echo "TBB libraries successfully installed from builder stage"; \
     fi
 
 # Copy API server files
