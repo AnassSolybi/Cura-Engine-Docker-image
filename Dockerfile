@@ -131,6 +131,7 @@ COPY stubs ./stubs
 # The Docker conanfile handles UltiMaker dependencies gracefully with fallbacks
 # Re-run conan install to ensure all dependencies are available (they should be cached from deps stage)
 # Then build the project using conan build
+# IMPORTANT: Also collect TBB libraries while cache is mounted (they won't be accessible after this RUN)
 RUN --mount=type=cache,target=/root/.conan2 \
     echo "Ensuring Conan profile exists..."; \
     conan profile detect --force || true; \
@@ -160,40 +161,30 @@ RUN --mount=type=cache,target=/root/.conan2 \
     -s compiler=gcc \
     -s compiler.version=12 \
     -s compiler.libcxx=libstdc++11 \
-    -s compiler.cppstd=20
+    -s compiler.cppstd=20 && \
+    echo "Collecting TBB libraries while Conan cache is mounted..." && \
+    mkdir -p /build/tbb_libs && \
+    (find /root/.conan2 -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null | while read lib; do \
+        echo "Found TBB library: $lib"; \
+        cp -vL "$lib" /build/tbb_libs/ 2>/dev/null || true; \
+    done) && \
+    echo "TBB libraries collected:" && \
+    ls -lh /build/tbb_libs/ 2>/dev/null || echo "No TBB libraries found yet"
 
 # Find and copy the executable to a known location for the runtime stage
 RUN find /build/build -name "CuraEngine" -type f -executable -exec cp {} /build/CuraEngine \; && \
     test -f /build/CuraEngine || (echo "Error: CuraEngine executable not found after build" && find /build/build -type f -name "*CuraEngine*" && exit 1)
 
-# Collect TBB libraries from Conan build directory for runtime stage
-# OneTBB libraries are needed at runtime and must match the build version
-# First, check what TBB libraries CuraEngine actually needs using ldd
+# Ensure TBB libraries directory exists and try to find any remaining TBB libraries
+# This catches libraries that might be in the build output rather than cache
 RUN mkdir -p /build/tbb_libs && \
-    echo "Checking required TBB libraries via ldd..." && \
-    (ldd /build/CuraEngine 2>/dev/null | grep -i tbb | awk '{print $3}' | while read libpath; do \
-        if [ -n "$libpath" ] && [ -f "$libpath" ]; then \
-            echo "Found required library: $libpath"; \
-            cp -v "$libpath" /build/tbb_libs/ 2>/dev/null || true; \
-            # Also copy symlinks and versioned libraries
-            libdir=$(dirname "$libpath"); \
-            libname=$(basename "$libpath"); \
-            find "$libdir" -name "${libname%.so*}*.so*" -type f -o -type l 2>/dev/null | while read linklib; do \
-                cp -vL "$linklib" /build/tbb_libs/ 2>/dev/null || true; \
-            done; \
-        fi; \
-    done || echo "No TBB libraries found via ldd (may be statically linked)") && \
-    echo "Searching for TBB libraries in Conan directories..." && \
-    (find /root/.conan2/data/onetbb -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null | while read lib; do \
+    echo "Checking for additional TBB libraries in build output..." && \
+    (find /build/build -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null | while read lib; do \
         echo "Found: $lib"; \
         cp -vL "$lib" /build/tbb_libs/ 2>/dev/null || true; \
     done || true) && \
-    (find /build/build -path "*/package/*/lib/libtbb*.so*" \( -type f -o -type l \) 2>/dev/null | while read lib; do \
-        echo "Found: $lib"; \
-        cp -vL "$lib" /build/tbb_libs/ 2>/dev/null || true; \
-    done || true) && \
-    echo "Collected TBB libraries:" && \
-    (ls -lh /build/tbb_libs/*.so* 2>/dev/null || echo "Warning: No TBB libraries found (may be statically linked)") && \
+    echo "Final TBB libraries:" && \
+    (ls -lh /build/tbb_libs/*.so* 2>/dev/null || echo "Warning: No TBB libraries found") && \
     touch /build/tbb_libs/.placeholder
 
 # Runtime stage
