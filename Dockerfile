@@ -269,7 +269,7 @@ RUN mkdir -p /usr/local/lib && \
 RUN if [ ! -f /usr/local/lib/libtbb.so.12 ] && [ ! -L /usr/local/lib/libtbb.so.12 ]; then \
         echo "TBB libraries not found from builder, installing system packages as fallback..."; \
         apt-get update && \
-        apt-get install -y libtbb2 libtbbmalloc2 && \
+        apt-get install -y libtbb2 libtbbmalloc2 libtbbmalloc-proxy2 && \
         apt-get clean && \
         rm -rf /var/lib/apt/lists/*; \
         echo "System TBB packages installed"; \
