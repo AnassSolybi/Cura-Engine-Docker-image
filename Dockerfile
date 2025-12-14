@@ -239,11 +239,28 @@ RUN useradd -m -u 1000 curaengine && \
 # Copy CuraEngine executable from builder (from known location)
 COPY --from=builder /build/CuraEngine /app/CuraEngine
 
+# Copy all Conan-deployed libraries from builder stage
+# These include all runtime dependencies built by Conan
+COPY --from=builder /build/deploy /tmp/conan_libs
+
+# Install all Conan libraries to /usr/local/lib
+RUN mkdir -p /usr/local/lib && \
+    if [ -d /tmp/conan_libs ] && [ "$(ls -A /tmp/conan_libs 2>/dev/null)" ]; then \
+        echo "Installing Conan libraries from builder stage..."; \
+        find /tmp/conan_libs -name "*.so*" -type f -o -name "*.so*" -type l | \
+        xargs -I {} cp -vL {} /usr/local/lib/ 2>/dev/null || true; \
+        echo "Conan libraries installed:"; \
+        ls -lh /usr/local/lib/*.so* 2>/dev/null | head -20 || echo "No libraries found"; \
+        rm -rf /tmp/conan_libs; \
+    else \
+        echo "No Conan libraries found in builder stage"; \
+    fi
+
 # Copy TBB libraries from builder stage and install them
 # These are the Conan-built libraries that match the build version
 COPY --from=builder /build/tbb_libs /tmp/tbb_libs
 
-# Install TBB libraries to /usr/local/lib
+# Install TBB libraries to /usr/local/lib (may be redundant but ensures TBB is there)
 RUN mkdir -p /usr/local/lib && \
     if [ -d /tmp/tbb_libs ] && [ "$(ls -A /tmp/tbb_libs 2>/dev/null)" ]; then \
         echo "Installing TBB libraries from builder stage..."; \
@@ -274,6 +291,8 @@ RUN if [ ! -f /usr/local/lib/libtbb.so.12 ] && [ ! -L /usr/local/lib/libtbb.so.1
         rm -rf /var/lib/apt/lists/*; \
         echo "System TBB packages installed"; \
         ls -lh /usr/lib/x86_64-linux-gnu/libtbb*.so* 2>/dev/null || true; \
+        echo "Copying system TBB libraries to /usr/local/lib..."; \
+        cp -v /usr/lib/x86_64-linux-gnu/libtbb*.so* /usr/local/lib/ 2>/dev/null || true; \
     else \
         echo "TBB libraries successfully installed from builder stage"; \
     fi
