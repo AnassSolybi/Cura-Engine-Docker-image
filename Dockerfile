@@ -198,6 +198,9 @@ RUN mkdir -p /build/tbb_libs && \
     echo "Step 4: Searching in Conan package directories..." && \
     find /root/.conan2/p -name "libtbb*.so*" 2>/dev/null | head -20 && \
     find /root/.conan2/p -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; || true && \
+    echo "Step 5: Check system locations..." && \
+    find /usr -name "libtbb*.so*" 2>/dev/null | head -20 && \
+    find /usr -name "libtbb*.so*" \( -type f -o -type l \) 2>/dev/null -exec cp -vL {} /build/tbb_libs/ \; || true && \
     echo "=== Final TBB libraries collected ===" && \
     ls -lah /build/tbb_libs/ && \
     echo "Total TBB files: $(find /build/tbb_libs -name '*.so*' 2>/dev/null | wc -l)" && \
@@ -227,6 +230,9 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     libprotobuf23 \
+    libtbb2 \
+    libtbbmalloc2 \
+    libtbbmalloc-proxy2 \
     && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -312,16 +318,20 @@ COPY entrypoint.sh /app/entrypoint.sh
 RUN ldconfig && \
     echo "Updated dynamic linker cache" && \
     echo "Libraries in /usr/local/lib:" && \
-    ls -la /usr/local/lib/ 2>/dev/null || echo "No files in /usr/local/lib"
+    ls -la /usr/local/lib/ 2>/dev/null || echo "No files in /usr/local/lib" && \
+    echo "System TBB libraries:" && \
+    ls -la /usr/lib/x86_64-linux-gnu/libtbb* 2>/dev/null || echo "No system TBB libraries found"
 
 # Set LD_LIBRARY_PATH as fallback for library loading
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/usr/local/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
 
 # Verify all required libraries are found (including TBB)
 RUN echo "Checking required libraries for CuraEngine:" && \
     ldd /app/CuraEngine && \
     echo "Checking specifically for TBB libraries:" && \
     (ldd /app/CuraEngine | grep -i tbb || echo "TBB libraries not found in ldd output") && \
+    echo "Checking for libtbbmalloc_proxy.so.2 specifically:" && \
+    (ldd /app/CuraEngine | grep libtbbmalloc_proxy || echo "libtbbmalloc_proxy not found in ldd output") && \
     echo "Library verification complete"
 
 # Make entrypoint executable and set ownership (before switching to non-root user)
