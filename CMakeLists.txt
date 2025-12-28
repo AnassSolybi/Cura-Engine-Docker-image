@@ -370,7 +370,7 @@ target_link_libraries(_CuraEngine
         $<$<TARGET_EXISTS:scripta::scripta>:scripta::scripta>
         PNG::PNG
         $<$<TARGET_EXISTS:mapbox-wagyu::mapbox-wagyu>:mapbox-wagyu::mapbox-wagyu>
-        $<$<NOT:$<BOOL:${EMSCRIPTEN}>>:onetbb::onetbb>
+        $<$<NOT:$<BOOL:${EMSCRIPTEN}>>:TBB::tbb>
         $<$<TARGET_EXISTS:semver::semver>:semver::semver>
         $<$<TARGET_EXISTS:curaengine_grpc_definitions::curaengine_grpc_definitions>:curaengine_grpc_definitions::curaengine_grpc_definitions>
         $<$<TARGET_EXISTS:asio-grpc::asio-grpc>:asio-grpc::asio-grpc>

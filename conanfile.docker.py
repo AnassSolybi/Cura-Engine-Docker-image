@@ -149,8 +149,9 @@ class CuraEngineDockerConan(ConanFile):
     def requirements(self):
         # Process requirements from conandata.yml, handling UltiMaker packages gracefully
         for req in self.conan_data["requirements"]:
-            # Skip OneTBB for Emscripten builds (single-threaded)
-            if req.startswith("onetbb/") and self.settings.arch == "wasm" and self.settings.os == "Emscripten":
+            # Skip OneTBB for Docker builds - use system TBB packages instead
+            if req.startswith("onetbb/"):
+                self.output.info(f"Skipping {req} - using system TBB packages for Docker build")
                 continue
             
             # Skip scripta - it's UltiMaker-specific and not available in ConanCenter
